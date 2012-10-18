@@ -1,41 +1,8 @@
-GoodCitizen
+This is a proof-of-concept test to experiment with getting the camera viewfinder rendered onto an opengl cube.
+my disclaimer is that I have never used OpenGL before in my life :)
 
-========================================================================
-Sample Description:
-
- The GoodCitizen sample is an application that is designed to introduce you to a
- number of common development practices that you can use in your own
- applications.
-
- When you run the application, the application displays a spinning cube that you
- can change the color of by selecting different menu options.
-
- Feature summary
- - Display a 3D cube that responds to a light source
- - Load textures and render text on the screen
- - Handle orientation changes and touch events
- - Display a menu on a swipe down gesture
- - Stop content from being rendered when the app is inactive
- - Save the application state on exit and reload at startup
- - Perform a clean termination
-
-
-========================================================================
-Requirements:
-
- - BlackBerry® 10 Native SDK
- - One of the following:
-   - BlackBerry® 10 device
-   - BlackBerry® 10 simulator
-
-========================================================================
-Importing a project into the Native SDK:
-
- 1. From the the Sample apps page, download and extract the sample application.
- 2. Launch the Native SDK.
- 3. On the File menu, click Import.
- 4. Expand General, and select Existing Projects into Workspace. Click Next.
- 5. Browse to the location where you extracted the sample app, and click OK.
-    The sample project should display in the the Projects section.
- 6. Click Finish to import the project into your workspace.
-
+It sort of works, but has some problems...
+-cube textures are improperly mapped with respect to the cube normals, etc.  this results in the texture being mapped as mirrored triangles instead of continuous squares.
+-colour space is mismatched.
+-I have to do a memcpy() which is suboptimal, and wastes cpu cycles because GL textures do not support strided bitmaps.
+-This can probably be optimized by using EglImage according to Sean Paul Taylor
