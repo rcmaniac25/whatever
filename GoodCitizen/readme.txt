@@ -6,3 +6,4 @@ It sort of works, but has some problems...
 -colour space is mismatched.
 -I have to do a memcpy() which is suboptimal, and wastes cpu cycles because GL textures do not support strided bitmaps.
 -This can probably be optimized by using EglImage according to Sean Paul Taylor
+-Also, seems like this only works on Dev Alpha B, as it is trying to use a 720x720 resolution, which is not supported on Dev Alpha A.  Change video vf resolution to 480x640 or some other supported resolution if using that target.
