@@ -34,6 +34,19 @@
 
 #include "bbutil.h"
 
+/* TODO:
+ * Cleanup code
+ * Get rid of memcpy for copying texture
+ * Switch to OpenGL ES 2.0
+ * Using shaders, switch BGR (from camera) to RGB (for drawing)
+ * Make sure rotation is handled correctly
+ * Figure out why drawn texture is "offset"
+ * Replace "colors" with "shaders" so filter effects can be done
+ */
+
+//Uncomment if compiling for DevAlpha B
+//#define DA_B_CAMERA_RES
+
 static GLfloat radio_btn_unselected_vertices[8], radio_btn_selected_vertices[8],
         background_portrait_vertices[8], background_landscape_vertices[8],
         *background_vertices;
@@ -120,12 +133,12 @@ float cube_normals[] = {
 
 #if 1
 float cube_tex_coords[] = {
-        0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f,  // front
-        1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f,  // back
-        0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f,
-        1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f,
-        1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f};
+		1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f,	//Front
+		0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f,	//Back
+		0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f,	//Left
+		0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f,	//Right
+		0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f,	//Top
+		1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f};//Bottom
 #endif
 
 
@@ -663,7 +676,6 @@ void render() {
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_TEXTURE_2D);
 
-
     glTranslatef(cube_pos_x, cube_pos_y, cube_pos_z);
 
     glRotatef(30.0f, 1.0f, 0.0f, 0.0f);
@@ -693,7 +705,7 @@ void render() {
 
     static int z = 0;
     z++;
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, TEXW, TEXH, 0, GL_RGBA, GL_UNSIGNED_BYTE, &pixelData);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, TEXW, TEXH, 0, GL_RGBA, GL_UNSIGNED_BYTE, &pixelData); //XXX Camera is returning BGRA instead of RGBA. Can't process here without major slowdown. Requires shaders
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); // set up settings
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR); // set up some more settings
 
@@ -783,7 +795,7 @@ void save_to_file() {
 
     fclose(fp);
 }
-void camera_describe_buffer(camera_buffer_t *b, bool to_stdout);
+
 void vf_callback(camera_handle_t handle,
                  camera_buffer_t *buf,
                  void* arg)
@@ -870,8 +882,13 @@ int main(int argc, char *argv[]) {
                                     CAMERA_IMGPROP_CREATEWINDOW, 0,
                                     CAMERA_IMGPROP_FORMAT, CAMERA_FRAMETYPE_RGB8888,
                                     CAMERA_IMGPROP_FRAMERATE, 30.0,
+#ifdef DA_B_CAMERA_RES
                                     CAMERA_IMGPROP_WIDTH, 720,
-                                    CAMERA_IMGPROP_HEIGHT, 720)) return 0;
+									CAMERA_IMGPROP_HEIGHT, 720)) return 0;
+#else
+                                    CAMERA_IMGPROP_WIDTH, 480,
+                                    CAMERA_IMGPROP_HEIGHT, 640)) return 0;
+#endif
     fprintf(stderr, "prop1\n");
     if (camera_start_video_viewfinder(handle, vf_callback, NULL, NULL)) return 0;
     fprintf(stderr, "start\n");
