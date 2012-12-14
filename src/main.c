@@ -28,9 +28,11 @@
 #include <camera/camera_api.h>
 #include <pthread.h>
 #include <string.h>
+#include <sys/neutrino.h>
 
 #include <EGL/egl.h>
 #include <GLES/gl.h>
+#include <GLES/glext.h>
 
 #include "bbutil.h"
 
@@ -45,7 +47,7 @@
  */
 
 //Uncomment if compiling for DevAlpha B
-//#define DA_B_CAMERA_RES
+#define DA_B_CAMERA_RES
 
 static GLfloat radio_btn_unselected_vertices[8], radio_btn_selected_vertices[8],
         background_portrait_vertices[8], background_landscape_vertices[8],
@@ -65,9 +67,6 @@ static float menu_animation, menu_height, button_size_x, button_size_y;
 static float pos_x, pos_y;
 static float cube_pos_x, cube_pos_y, cube_pos_z;
 static GLuint textureID;
-#define TEXW 512
-#define TEXH 512
-unsigned char pixelData[TEXW*TEXH*4];
 static camera_handle_t handle;
 static pthread_mutex_t bufMutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t bufCond = PTHREAD_COND_INITIALIZER;
@@ -132,6 +131,7 @@ float cube_normals[] = {
 
 
 #if 1
+// note: since the textures are being cropped it may make sense to scale these values appropriately
 float cube_tex_coords[] = {
 		1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f,	//Front
 		0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f,	//Back
@@ -527,16 +527,6 @@ int initialize() {
     // CUBE CAMERA TEXTURE SETUP?
     glGenTextures(1, &textureID);
     glBindTexture(GL_TEXTURE_2D, textureID);
-    int x,y;
-    for (y=0; y<TEXH; y++) for (x=0; x<TEXW*4; x+=4) {
-        pixelData[y*TEXW*4+x] = x; //x*2;  // red
-        pixelData[y*TEXW*4+x+1] = 0xff; // 255-x*2;  // green
-        pixelData[y*TEXW*4+x+2] = 0x00; // y*2;  // blue
-        pixelData[y*TEXW*4+x+3] = 0xff; // 255; // alpha
-    }
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, TEXW, TEXH, 0, GL_RGBA, GL_UNSIGNED_BYTE, &pixelData);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); // set up settings
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR); // set up some more settings
 
     //Common gl setup
     glShadeModel(GL_SMOOTH);
@@ -550,7 +540,6 @@ int initialize() {
     glEnable(GL_CULL_FACE);
 
     menu_show_animation = true;
-
     return EXIT_SUCCESS;
 }
 
@@ -612,6 +601,22 @@ void update() {
 
     pos_y = height - menu_animation;
 }
+
+unsigned long lower_power_of_two(unsigned long v)
+{
+    bool p2 = (v & (v - 1)) == 0;
+    v--;
+    v |= v >> 1;
+    v |= v >> 2;
+    v |= v >> 4;
+    v |= v >> 8;
+    v |= v >> 16;
+    v++;
+    if (!p2) v >>= 1;
+    return v;
+
+}
+
 
 void render() {
     int i;
@@ -689,23 +694,24 @@ void render() {
     glEnableClientState(GL_TEXTURE_COORD_ARRAY);
 
     // regenerate texture
-#if 0
     pthread_mutex_lock(&bufMutex);
     bufWaitingConsumer = true;
-    fprintf(stderr, "render thread waiting\n");
     pthread_cond_wait(&bufCond, &bufMutex);
     bufWaitingConsumer = false;
 
+    static int z = 0;
+    z++;
+    //glPixelStorei(GL_UNPACK_ROW_LENGTH, cameraBuf->framedesc.rgb8888.stride);
+    glBindTexture(GL_TEXTURE_2D, textureID);
+    int w = lower_power_of_two(cameraBuf->framedesc.rgb8888.width);
+    int h = lower_power_of_two(cameraBuf->framedesc.rgb8888.height);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_BGRA, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, cameraBuf->framebuf);
+    //glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
     if (bufWaitingProducer) {
         pthread_cond_signal(&bufCond);
     }
     pthread_mutex_unlock(&bufMutex);
-#endif
-    glBindTexture(GL_TEXTURE_2D, textureID);
 
-    static int z = 0;
-    z++;
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, TEXW, TEXH, 0, GL_RGBA, GL_UNSIGNED_BYTE, &pixelData); //XXX Camera is returning BGRA instead of RGBA. Can't process here without major slowdown. Requires shaders
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); // set up settings
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR); // set up some more settings
 
@@ -732,9 +738,27 @@ void render() {
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_TEXTURE_2D);
 
-
     //Use utility code to update the screen
     bbutil_swap();
+
+    // performance:
+    static uint64_t t1 = 0;
+    static uint64_t t2 = 0;
+    static unsigned short count = 0;
+    if (++count == 30) {
+        if (!t1) {
+            ClockTime(CLOCK_MONOTONIC, NULL, &t1);
+        } else {
+            ClockTime(CLOCK_MONOTONIC, NULL, &t2);
+            double fps = (t2-t1);
+            fps = fps / 1000000000;
+            fps = count / fps;
+            fprintf(stderr, "RENDER @ %f fps\n", fps);
+            t1 = t2;
+        }
+        count = 0;
+    }
+
 }
 
 int read_from_file() {
@@ -802,28 +826,32 @@ void vf_callback(camera_handle_t handle,
 {
     int y;
     if (buf->frametype == CAMERA_FRAMETYPE_RGB8888) {
-        fprintf(stderr, "buffer size: %d x %d (x %d)\n", buf->framedesc.rgb8888.width, buf->framedesc.rgb8888.height, buf->framedesc.rgb8888.stride);
-        fprintf(stderr, "pixel: %x %x %x %x\n", buf->framebuf[0], buf->framebuf[1], buf->framebuf[2], buf->framebuf[3]);
         // signal the render thread to use the buffer
-#if 0
+        static uint64_t t1 = 0;
+        static uint64_t t2 = 0;
+        static unsigned short count = 0;
+        if (++count == 30) {
+            if (!t1) {
+                ClockTime(CLOCK_MONOTONIC, NULL, &t1);
+            } else {
+                ClockTime(CLOCK_MONOTONIC, NULL, &t2);
+                double fps = (t2-t1);
+                fps = fps / 1000000000;
+                fps = count / fps;
+                fprintf(stderr, "VF @ %f fps\n", fps);
+                t1 = t2;
+            }
+            count = 0;
+        }
         pthread_mutex_lock(&bufMutex);
         if (bufWaitingConsumer) {
             cameraBuf = buf;
-            for (y = 0; y<TEXH; y++) {
-                memcpy(&pixelData[y*TEXW*4], &buf->framebuf[y*buf->framedesc.rgb8888.stride], TEXW*4);
-            }
             pthread_cond_signal(&bufCond);
             bufWaitingProducer = true;
-            fprintf(stderr, "vf thread waiting\n");
             pthread_cond_wait(&bufCond, &bufMutex);
             bufWaitingProducer = false;
         }
         pthread_mutex_unlock(&bufMutex);
-#else
-        for (y = 0; y<TEXH; y++) {
-            memcpy(&pixelData[y*TEXW*4], &buf->framebuf[y*buf->framedesc.rgb8888.stride], TEXW*4);
-        }
-#endif
     }
 }
 
@@ -878,16 +906,24 @@ int main(int argc, char *argv[]) {
     if (camera_open(CAMERA_UNIT_FRONT, CAMERA_MODE_RW, &handle)) return 0;
     fprintf(stderr, "open\n");
 
+
+
     if (camera_set_videovf_property(handle,
                                     CAMERA_IMGPROP_CREATEWINDOW, 0,
                                     CAMERA_IMGPROP_FORMAT, CAMERA_FRAMETYPE_RGB8888,
                                     CAMERA_IMGPROP_FRAMERATE, 30.0,
 #ifdef DA_B_CAMERA_RES
-                                    CAMERA_IMGPROP_WIDTH, 720,
-									CAMERA_IMGPROP_HEIGHT, 720)) return 0;
+                                    // note: output texture width needs to be a power of 2 apparently for this to work,
+                                    // despite my efforts to use glPixelStorei()
+                                    CAMERA_IMGPROP_ROTATION, 90,
+                                    CAMERA_IMGPROP_WIDTH, 576,
+									CAMERA_IMGPROP_HEIGHT, 1024)) return 0;
 #else
-                                    CAMERA_IMGPROP_WIDTH, 480,
-                                    CAMERA_IMGPROP_HEIGHT, 640)) return 0;
+                                    // note: output texture width needs to be a power of 2 apparently for this to work,
+                                    // despite my efforts to use glPixelStorei()
+                                    CAMERA_IMGPROP_ROTATION, 90,
+                                    CAMERA_IMGPROP_WIDTH, 576,
+                                    CAMERA_IMGPROP_HEIGHT, 1024)) return 0;
 #endif
     fprintf(stderr, "prop1\n");
     if (camera_start_video_viewfinder(handle, vf_callback, NULL, NULL)) return 0;

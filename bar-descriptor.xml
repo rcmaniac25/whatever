@@ -50,33 +50,33 @@
     <asset path="background-portrait.png">background-portrait.png</asset>
     <asset path="sample-splashscreen-landscape.png">sample-splashscreen-landscape.png</asset>
     <asset path="sample-splashscreen-portrait.png">sample-splashscreen-portrait.png</asset>
-    <configuration id="com.qnx.qcc.configuration.exe.debug.803069212" name="Device-Debug">
+    <configuration name="Device-Debug">
        <platformArchitecture>armle-v7</platformArchitecture>
-       <asset path="Device-Debug/Camera3D" entry="true" type="Qnx/Elf">Camera3D</asset>
+       <asset path="Device-Debug/GoodCitizen" entry="true" type="Qnx/Elf">GoodCitizen</asset>
     </configuration>
-    <configuration id="com.qnx.qcc.configuration.exe.release.2081725151" name="Device-Release">
+    <configuration name="Device-Release">
        <platformArchitecture>armle-v7</platformArchitecture>
-       <asset path="Device-Release/Camera3D" entry="true" type="Qnx/Elf">Camera3D</asset>
+       <asset path="Device-Release/GoodCitizen" entry="true" type="Qnx/Elf">GoodCitizen</asset>
     </configuration>
-    <configuration id="com.qnx.qcc.configuration.exe.profile.538524686" name="Device-Profile">
+    <configuration name="Device-Profile">
        <platformArchitecture>armle-v7</platformArchitecture>
-       <asset path="Device-Profile/Camera3D" entry="true" type="Qnx/Elf">Camera3D</asset>
+       <asset path="Device-Profile/GoodCitizen" entry="true" type="Qnx/Elf">GoodCitizen</asset>
     </configuration>
-    <configuration id="com.qnx.qcc.configuration.exe.profile.coverage.928160486" name="Device-Coverage">
+    <configuration name="Device-Coverage">
        <platformArchitecture>armle-v7</platformArchitecture>
-       <asset path="Device-Coverage/Camera3D" entry="true" type="Qnx/Elf">Camera3D</asset>
+       <asset path="Device-Coverage/GoodCitizen" entry="true" type="Qnx/Elf">GoodCitizen</asset>
     </configuration>
-    <configuration id="com.qnx.qcc.configuration.exe.debug.2059749472" name="Simulator-Debug">
+    <configuration name="Simulator-Debug">
        <platformArchitecture>x86</platformArchitecture>
-       <asset path="Simulator-Debug/Camera3D" entry="true" type="Qnx/Elf">Camera3D</asset>
+       <asset path="Simulator-Debug/GoodCitizen" entry="true" type="Qnx/Elf">GoodCitizen</asset>
     </configuration>
-    <configuration id="com.qnx.qcc.configuration.exe.profile.1901201427" name="Simulator-Profile">
+    <configuration name="Simulator-Profile">
        <platformArchitecture>x86</platformArchitecture>
-       <asset path="Simulator-Profile/Camera3D" entry="true" type="Qnx/Elf">Camera3D</asset>
+       <asset path="Simulator-Profile/GoodCitizen" entry="true" type="Qnx/Elf">GoodCitizen</asset>
     </configuration>
-    <configuration id="com.qnx.qcc.configuration.exe.profile.coverage.1363347935" name="Simulator-Coverage">
+    <configuration name="Simulator-Coverage">
        <platformArchitecture>x86</platformArchitecture>
-       <asset path="Simulator-Coverage/Camera3D" entry="true" type="Qnx/Elf">Camera3D</asset>
+       <asset path="Simulator-Coverage/GoodCitizen" entry="true" type="Qnx/Elf">GoodCitizen</asset>
     </configuration>
     
     <!--  The icon for the application, which should be 86x86. -->
