@@ -37,8 +37,8 @@
 #include "bbutil.h"
 
 /* TODO:
- * Cleanup code
  * Switch to OpenGL ES 2.0
+ * Cleanup code
  * Speed up rendering (probably slow from the mutex)
  * Make sure device rotation is handled correctly
  * Figure out why drawn texture is "offset"
@@ -140,7 +140,6 @@ float cube_tex_coords[] = {
 		1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f};//Bottom
 #endif
 
-
 int resize();
 void update();
 void render();
@@ -200,10 +199,8 @@ static void handleScreenEvent(bps_event_t *event) {
     screen_event_t screen_event = screen_event_get_event(event);
 
     //Query type of screen event and its location on the screen
-    screen_get_event_property_iv(screen_event, SCREEN_PROPERTY_TYPE,
-            &screen_val);
-    screen_get_event_property_iv(screen_event, SCREEN_PROPERTY_SOURCE_POSITION,
-            pair);
+    screen_get_event_property_iv(screen_event, SCREEN_PROPERTY_TYPE, &screen_val);
+    screen_get_event_property_iv(screen_event, SCREEN_PROPERTY_SOURCE_POSITION, pair);
 
     //There is a difference between touch screen events and mouse events
     if (screen_val == SCREEN_EVENT_MTOUCH_RELEASE) {
@@ -212,8 +209,7 @@ static void handleScreenEvent(bps_event_t *event) {
 
     } else if (screen_val == SCREEN_EVENT_POINTER) {
         //This is a mouse move event, it is applicable to a device with a usb mouse or simulator
-        screen_get_event_property_iv(screen_event, SCREEN_PROPERTY_BUTTONS,
-                &buttons);
+        screen_get_event_property_iv(screen_event, SCREEN_PROPERTY_BUTTONS, &buttons);
 
         if (buttons == SCREEN_LEFT_MOUSE_BUTTON) {
             //Left mouse button is pressed
@@ -528,6 +524,7 @@ int initialize() {
     glBindTexture(GL_TEXTURE_2D, textureID);
 
     //Common gl setup
+    //TODO: Update
     glShadeModel(GL_SMOOTH);
     glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
 
@@ -543,6 +540,7 @@ int initialize() {
 }
 
 void enable_2d() {
+	//TODO: Update
     glViewport(0, 0, (int) width, (int) height);
 
     glMatrixMode(GL_PROJECTION);
@@ -556,6 +554,7 @@ void enable_2d() {
 }
 
 void enable_3d() {
+	//TODO: Update
     glViewport(0, 0, (int) width, (int) height);
 
     GLfloat aspect_ratio = width / height;
@@ -570,8 +569,7 @@ void enable_3d() {
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
 
-    glFrustumf(aspect_ratio * bottom, aspect_ratio * top, bottom, top, zNear,
-            zFar);
+    glFrustumf(aspect_ratio * bottom, aspect_ratio * top, bottom, top, zNear, zFar);
 
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
@@ -613,11 +611,10 @@ unsigned long lower_power_of_two(unsigned long v)
     v++;
     if (!p2) v >>= 1;
     return v;
-
 }
 
-
 void render() {
+	//TODO: Update
     int i;
 
     //Typical render pass
@@ -905,8 +902,6 @@ int main(int argc, char *argv[]) {
     if (camera_open(CAMERA_UNIT_FRONT, CAMERA_MODE_RW, &handle)) return 0;
     fprintf(stderr, "open\n");
 
-
-
     if (camera_set_videovf_property(handle,
                                     CAMERA_IMGPROP_CREATEWINDOW, 0,
                                     CAMERA_IMGPROP_FORMAT, CAMERA_FRAMETYPE_RGB8888,
@@ -927,9 +922,6 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "prop1\n");
     if (camera_start_video_viewfinder(handle, vf_callback, NULL, NULL)) return 0;
     fprintf(stderr, "start\n");
-
-
-
 
     while (!shutdown) {
         // Handle user input and accelerometer
