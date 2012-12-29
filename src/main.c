@@ -38,16 +38,15 @@
 
 /* TODO:
  * Cleanup code
- * Get rid of memcpy for copying texture
  * Switch to OpenGL ES 2.0
- * Using shaders, switch BGR (from camera) to RGB (for drawing)
- * Make sure rotation is handled correctly
+ * Speed up rendering (probably slow from the mutex)
+ * Make sure device rotation is handled correctly
  * Figure out why drawn texture is "offset"
  * Replace "colors" with "shaders" so filter effects can be done
  */
 
 //Uncomment if compiling for DevAlpha B
-#define DA_B_CAMERA_RES
+//#define DA_B_CAMERA_RES
 
 static GLfloat radio_btn_unselected_vertices[8], radio_btn_selected_vertices[8],
         background_portrait_vertices[8], background_landscape_vertices[8],
@@ -133,10 +132,10 @@ float cube_normals[] = {
 #if 1
 // note: since the textures are being cropped it may make sense to scale these values appropriately
 float cube_tex_coords[] = {
-		1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f,	//Front
-		0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f,	//Back
-		0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f,	//Left
-		0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f,	//Right
+		0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f,	1.0f, 0.0f, //Front
+		0.0f, 0.0f, 1.0f, 0.0f,	0.0f, 1.0f, 1.0f, 1.0f, //Back
+		0.0f, 0.0f, 1.0f, 0.0f,	0.0f, 1.0f, 1.0f, 1.0f, //Left
+		0.0f, 0.0f, 1.0f, 0.0f,	0.0f, 1.0f, 1.0f, 1.0f, //Right
 		0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f,	//Top
 		1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f};//Bottom
 #endif

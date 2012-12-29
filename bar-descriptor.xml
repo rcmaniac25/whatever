@@ -12,7 +12,7 @@
 
     <!-- The name that is displayed in the BlackBerry application installer. 
          May have multiple values for each language. See samples or xsd schema file. Optional. -->
-    <name>GoodCitizen</name>
+    <name>Camera 3D</name>
     
     <!-- A string value of the format <0-999>.<0-999>.<0-999> that represents application version which can be used to check for application upgrade. 
          Values can also be 1-part or 2-part. It is not necessary to have a 3-part value.
@@ -25,7 +25,7 @@
                  
     <!-- Description, displayed in the BlackBerry application installer.
          May have multiple values for each language. See samples or xsd schema file. Optional. -->
-    <description>The GoodCitizen application</description>
+    <description>The camera projected onto a 3D surface.</description>
 
     <!--  Name of author which is used for signing. Must match the developer name of your development certificate. -->
     <author>Example Inc.</author>
@@ -52,31 +52,31 @@
     <asset path="sample-splashscreen-portrait.png">sample-splashscreen-portrait.png</asset>
     <configuration name="Device-Debug">
        <platformArchitecture>armle-v7</platformArchitecture>
-       <asset path="Device-Debug/GoodCitizen" entry="true" type="Qnx/Elf">GoodCitizen</asset>
+       <asset path="Device-Debug/Camera3D" entry="true" type="Qnx/Elf">Camera3D</asset>
     </configuration>
     <configuration name="Device-Release">
        <platformArchitecture>armle-v7</platformArchitecture>
-       <asset path="Device-Release/GoodCitizen" entry="true" type="Qnx/Elf">GoodCitizen</asset>
+       <asset path="Device-Release/Camera3D" entry="true" type="Qnx/Elf">Camera3D</asset>
     </configuration>
     <configuration name="Device-Profile">
        <platformArchitecture>armle-v7</platformArchitecture>
-       <asset path="Device-Profile/GoodCitizen" entry="true" type="Qnx/Elf">GoodCitizen</asset>
+       <asset path="Device-Profile/Camera3D" entry="true" type="Qnx/Elf">Camera3D</asset>
     </configuration>
     <configuration name="Device-Coverage">
        <platformArchitecture>armle-v7</platformArchitecture>
-       <asset path="Device-Coverage/GoodCitizen" entry="true" type="Qnx/Elf">GoodCitizen</asset>
+       <asset path="Device-Coverage/Camera3D" entry="true" type="Qnx/Elf">Camera3D</asset>
     </configuration>
     <configuration name="Simulator-Debug">
        <platformArchitecture>x86</platformArchitecture>
-       <asset path="Simulator-Debug/GoodCitizen" entry="true" type="Qnx/Elf">GoodCitizen</asset>
+       <asset path="Simulator-Debug/Camera3D" entry="true" type="Qnx/Elf">Camera3D</asset>
     </configuration>
     <configuration name="Simulator-Profile">
        <platformArchitecture>x86</platformArchitecture>
-       <asset path="Simulator-Profile/GoodCitizen" entry="true" type="Qnx/Elf">GoodCitizen</asset>
+       <asset path="Simulator-Profile/Camera3D" entry="true" type="Qnx/Elf">Camera3D</asset>
     </configuration>
     <configuration name="Simulator-Coverage">
        <platformArchitecture>x86</platformArchitecture>
-       <asset path="Simulator-Coverage/GoodCitizen" entry="true" type="Qnx/Elf">GoodCitizen</asset>
+       <asset path="Simulator-Coverage/Camera3D" entry="true" type="Qnx/Elf">Camera3D</asset>
     </configuration>
     
     <!--  The icon for the application, which should be 86x86. -->
