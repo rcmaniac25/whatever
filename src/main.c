@@ -31,10 +31,11 @@
 #include <sys/neutrino.h>
 
 #include <EGL/egl.h>
-#include <GLES/gl.h>
-#include <GLES/glext.h>
+#include <GLES2/gl2.h>
+#include <GLES2/gl2ext.h>
 
 #include "bbutil.h"
+#include "matrix.h"
 
 /* TODO:
  * Switch to OpenGL ES 2.0
@@ -56,6 +57,8 @@ static GLfloat radio_btn_unselected_tex_coord[8],
         background_landscape_tex_coord[8], *background_tex_coord;
 static GLuint radio_btn_unselected, radio_btn_selected, background_landscape,
         background_portrait, background;
+static GLfloat* matrix_menu_projection, *matrix_menu_modelView;
+static GLuint program_menu;
 static screen_context_t screen_cxt;
 static font_t* font;
 static float width, height, angle;
@@ -65,12 +68,15 @@ static float cube_color[4];
 static float menu_animation, menu_height, button_size_x, button_size_y;
 static float pos_x, pos_y;
 static float cube_pos_x, cube_pos_y, cube_pos_z;
+
 static GLuint textureID;
-static camera_handle_t handle;
+
 static pthread_mutex_t bufMutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t bufCond = PTHREAD_COND_INITIALIZER;
 static bool bufWaitingProducer = false;
 static bool bufWaitingConsumer = false;
+
+static camera_handle_t handle;
 static camera_buffer_t *cameraBuf = NULL;
 
 GLfloat light_ambient[] = { 0.5f, 0.5f, 0.5f, 1.0f };
@@ -128,8 +134,6 @@ float cube_normals[] = {
         0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f,
         0.0f };
 
-
-#if 1
 // note: since the textures are being cropped it may make sense to scale these values appropriately
 float cube_tex_coords[] = {
 		0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f,	1.0f, 0.0f, //Front
@@ -138,7 +142,6 @@ float cube_tex_coords[] = {
 		0.0f, 0.0f, 1.0f, 0.0f,	0.0f, 1.0f, 1.0f, 1.0f, //Right
 		0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f,	//Top
 		1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f};//Bottom
-#endif
 
 int resize();
 void update();
@@ -313,6 +316,17 @@ int resize(bps_event_t *event) {
     width = (float) surface_width;
     height = (float) surface_height;
 
+    if(matrix_menu_projection)
+    {
+    	matrix_free(matrix_menu_projection);
+    	matrix_menu_projection = NULL;
+    }
+    if(matrix_menu_modelView)
+	{
+		matrix_free(matrix_menu_modelView);
+		matrix_menu_modelView = NULL;
+	}
+
     if (width > height) {
         cube_pos_x = 2.9f;
         cube_pos_y = 0.1f;
@@ -327,11 +341,12 @@ int resize(bps_event_t *event) {
         cube_pos_y = -1.0f;
         cube_pos_z = -30.0f;
 
-        //background = background_portrait;
-        background = textureID;
+        background = background_portrait;
         background_vertices = background_portrait_vertices;
         background_tex_coord = background_portrait_tex_coord;
     }
+
+    glViewport(0, 0, (int) width, (int) height);
 
     update();
 
@@ -342,6 +357,88 @@ int resize(bps_event_t *event) {
     }
 
     return EXIT_SUCCESS;
+}
+
+GLuint loadShader(const char* v_source, const char* f_source)
+{
+	GLint status;
+
+	// Compile the vertex shader
+	GLuint vs = glCreateShader(GL_VERTEX_SHADER);
+
+	if (!vs) {
+		fprintf(stderr, "Failed to create vertex shader: %d\n", glGetError());
+		return 0;
+	} else {
+		glShaderSource(vs, 1, &v_source, 0);
+		glCompileShader(vs);
+		glGetShaderiv(vs, GL_COMPILE_STATUS, &status);
+		if (GL_FALSE == status) {
+			GLchar log[256];
+			glGetShaderInfoLog(vs, 256, NULL, log);
+
+			fprintf(stderr, "Failed to compile vertex shader: %s\n", log);
+
+			glDeleteShader(vs);
+
+			return 0;
+		}
+	}
+
+	// Compile the fragment shader
+	GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
+
+	if (!fs) {
+		fprintf(stderr, "Failed to create fragment shader: %d\n", glGetError());
+		return 0;
+	} else {
+		glShaderSource(fs, 1, &f_source, 0);
+		glCompileShader(fs);
+		glGetShaderiv(fs, GL_COMPILE_STATUS, &status);
+		if (GL_FALSE == status) {
+			GLchar log[256];
+			glGetShaderInfoLog(fs, 256, NULL, log);
+
+			fprintf(stderr, "Failed to compile fragment shader: %s\n", log);
+
+			glDeleteShader(vs);
+			glDeleteShader(fs);
+
+			return 0;
+		}
+	}
+
+	// Create and link the program
+	GLuint program = glCreateProgram();
+	if (program)
+	{
+		glAttachShader(program, vs);
+		glAttachShader(program, fs);
+		glLinkProgram(program);
+
+		glGetProgramiv(program, GL_LINK_STATUS, &status);
+		if (status == GL_FALSE)    {
+			GLchar log[256];
+			glGetProgramInfoLog(fs, 256, NULL, log);
+
+			fprintf(stderr, "Failed to link text rendering shader program: %s\n", log);
+
+			glDeleteProgram(program);
+			program = 0;
+		}
+	} else {
+		fprintf(stderr, "Failed to create a shader program\n");
+
+		glDeleteShader(vs);
+		glDeleteShader(fs);
+		return 0;
+	}
+
+	// We don't need the shaders anymore - the program is enough
+	glDeleteShader(fs);
+	glDeleteShader(vs);
+
+	return program;
 }
 
 int initialize() {
@@ -524,55 +621,79 @@ int initialize() {
     glBindTexture(GL_TEXTURE_2D, textureID);
 
     //Common gl setup
-    //TODO: Update
-    glShadeModel(GL_SMOOTH);
+    //TODO: XXX
+    //glShadeModel(GL_SMOOTH);
     glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
 
-    glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient);
-    glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse);
-    glLightfv(GL_LIGHT0, GL_POSITION, light_pos);
-    glLightfv(GL_LIGHT0, GL_SPOT_DIRECTION, light_direction);
+    //glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient);
+    //glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse);
+    //glLightfv(GL_LIGHT0, GL_POSITION, light_pos);
+    //glLightfv(GL_LIGHT0, GL_SPOT_DIRECTION, light_direction);
 
     glEnable(GL_CULL_FACE);
+
+    const char* vSource_menu =
+   			"attribute vec2 vertexPosition;"
+   			"attribute vec2 uvPosition;"
+   			"uniform mat4 modelViewMatrix;"
+   			"uniform mat4 perspectiveMatrix;"
+   			"varying vec2 uv;"
+   			"void main()"
+   			"{"
+   			"    gl_Position = perspectiveMatrix * modelViewMatrix * vec4(vertexPosition, 0.0, 1.0);"
+   			"    uv = uvPosition;"
+   			"}";
+
+   	const char* fSource_menu =
+   			"#ifdef GL_ES\r\n"
+   			"    #ifdef GL_FRAGMENT_PRECISION_HIGH\r\n"
+   			"        precision highp float;\r\n"
+   			"    #else\r\n"
+   			"        precision mediump float;\r\n"
+   			"    #endif\r\n"
+   			"#endif\r\n"
+   			"varying vec2 uv;"
+   			"uniform sampler2D tex;"
+   			"void main()"
+   			"{"
+   			"    gl_FragColor = texture2D(tex, uv);"
+   			"}";
+
+    program_menu = loadShader(vSource_menu, fSource_menu);
+    if(program_menu == 0) {
+    	fprintf(stderr, "Initialize menu program\n");
+		return EXIT_FAILURE;
+    }
+
+    matrix_menu_projection = NULL;
+    matrix_menu_modelView = NULL;
 
     menu_show_animation = true;
     return EXIT_SUCCESS;
 }
 
-void enable_2d() {
-	//TODO: Update
-    glViewport(0, 0, (int) width, (int) height);
-
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-
-    glOrthof(0.0f, width / height, 0.0f, 1.0f, -1.0f, 1.0f);
-
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
-    glScalef(1.0f / height, 1.0f / height, 1.0f);
+matrix4f createMatrix_menu_projection()
+{
+	return matrix_ortho(0.0f, width / height, 0.0f, 1.0f, -1.0f, 1.0f);
 }
 
-void enable_3d() {
-	//TODO: Update
-    glViewport(0, 0, (int) width, (int) height);
+matrix4f createMatrix_menu_modelView()
+{
+	return matrix_scale(1.0f / height, 1.0f / height, 1.0f);
+}
 
-    GLfloat aspect_ratio = width / height;
+matrix4f createMatrix_3d_projection()
+{
+	GLfloat aspect_ratio = width / height;
 
-    GLfloat fovy = 20.0f;
-    GLfloat zNear = 1.0f;
-    GLfloat zFar = 1000.0f;
+	GLfloat fovy = 20.0f;
+	GLfloat zNear = 1.0f;
+	GLfloat zFar = 1000.0f;
 
-    GLfloat top = tan(fovy * 0.0087266462599716478846184538424431f) * zNear;
-    GLfloat bottom = -top;
+	GLfloat top = tan(fovy * 0.0087266462599716478846184538424431f) * zNear;
+	GLfloat bottom = -top;
 
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-
-    glFrustumf(aspect_ratio * bottom, aspect_ratio * top, bottom, top, zNear, zFar);
-
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
+	return matrix_frustum(aspect_ratio * bottom, aspect_ratio * top, bottom, top, zNear, zFar);
 }
 
 void update() {
@@ -621,54 +742,78 @@ void render() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     //First render background and menu if it is enabled
-    enable_2d();
+    glUseProgram(program_menu);
+    if(!matrix_menu_projection)
+	{
+    	GLint pAtt = glGetUniformLocation(program_menu, "perspectiveMatrix");
+		matrix_menu_projection = createMatrix_menu_projection();
+		glUniformMatrix4fv(pAtt, 1, GL_FALSE, matrix_menu_projection);
+	}
+    if(!matrix_menu_modelView)
+	{
+		matrix_menu_modelView = createMatrix_menu_modelView();
+	}
 
-    glEnable(GL_TEXTURE_2D);
-    glEnableClientState(GL_VERTEX_ARRAY);
-    glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+    GLint mvAtt = glGetUniformLocation(program_menu, "modelViewMatrix");
+	glUniformMatrix4fv(mvAtt, 1, GL_FALSE, matrix_menu_modelView);
+
+    GLint tAtt = glGetUniformLocation(program_menu, "tex");
+    glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, background);
+	glUniform1i(tAtt, 0);
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+    GLint vertAtt = glGetAttribLocation(program_menu, "vertexPosition");
+	glEnableVertexAttribArray(vertAtt);
+	GLint uvAtt = glGetAttribLocation(program_menu, "uvPosition");
+	glEnableVertexAttribArray(uvAtt);
 
-    glVertexPointer(2, GL_FLOAT, 0, background_vertices);
-    glTexCoordPointer(2, GL_FLOAT, 0, background_tex_coord);
-    glBindTexture(GL_TEXTURE_2D, background);
+	glVertexAttribPointer(vertAtt, 2, GL_FLOAT, GL_FALSE, 0, background_vertices);
+	glVertexAttribPointer(uvAtt, 2, GL_FLOAT, GL_FALSE, 0, background_tex_coord);
 
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
     if (menu_active || menu_show_animation || menu_hide_animation) {
-        glTranslatef(pos_x, pos_y, 0.0f);
+    	GLfloat x = pos_x, y = pos_y;
+        matrix_menu_modelView = matrix_multiply_delete(matrix_menu_modelView, TRUE, matrix_translate(pos_x, pos_y, 0.0f), TRUE);
+        glUniformMatrix4fv(mvAtt, 1, GL_FALSE, matrix_menu_modelView);
 
         for (i = 0; i < 4; i++) {
             if (i == selected) {
-                glVertexPointer(2, GL_FLOAT, 0, radio_btn_selected_vertices);
-                glTexCoordPointer(2, GL_FLOAT, 0, radio_btn_selected_tex_coord);
-                glBindTexture(GL_TEXTURE_2D, radio_btn_selected);
+            	glVertexAttribPointer(vertAtt, 2, GL_FLOAT, GL_FALSE, 0, radio_btn_selected_vertices);
+				glVertexAttribPointer(uvAtt, 2, GL_FLOAT, GL_FALSE, 0, radio_btn_selected_tex_coord);
+				glBindTexture(GL_TEXTURE_2D, radio_btn_selected);
             } else {
-                glVertexPointer(2, GL_FLOAT, 0, radio_btn_unselected_vertices);
-                glTexCoordPointer(2, GL_FLOAT, 0,
-                        radio_btn_unselected_tex_coord);
-                glBindTexture(GL_TEXTURE_2D, radio_btn_unselected);
+            	glVertexAttribPointer(vertAtt, 2, GL_FLOAT, GL_FALSE, 0, radio_btn_unselected_vertices);
+				glVertexAttribPointer(uvAtt, 2, GL_FLOAT, GL_FALSE, 0, radio_btn_unselected_tex_coord);
+				glBindTexture(GL_TEXTURE_2D, radio_btn_unselected);
             }
 
-            glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
             glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-            glTranslatef(0.0f, 60.0f, 0.0f);
+            matrix_menu_modelView = matrix_multiply_delete(matrix_menu_modelView, TRUE, matrix_translate(0.0f, 60.0f, 0.0f), TRUE);
+            glUniformMatrix4fv(mvAtt, 1, GL_FALSE, matrix_menu_modelView);
         }
 
-        bbutil_render_text(font, "Color Menu", 10.0f, 10.0f, 0.35f, 0.35f, 0.35f, 1.0f);
-        bbutil_render_text(font, "Red", 70.0f, -40.0f, 0.35f, 0.35f, 0.35f, 1.0f);
-        bbutil_render_text(font, "Green", 70.0f, -100.0f, 0.35f, 0.35f, 0.35f, 1.0f);
-        bbutil_render_text(font, "Blue", 70.0f, -160.0f, 0.35f, 0.35f, 0.35f, 1.0f);
-        bbutil_render_text(font, "Yellow", 70.0f, -220.0f, 0.35f, 0.35f, 0.35f, 1.0f);
+        //TODO: Figure out proper text translation
+
+        bbutil_render_text(font, "Color Menu",	10.0f + x,	10.0f + y,		0.35f, 0.35f, 0.35f, 1.0f);
+        bbutil_render_text(font, "Red",			70.0f + x,	-40.0f + y,		0.35f, 0.35f, 0.35f, 1.0f);
+        bbutil_render_text(font, "Green",		70.0f + x,	-100.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
+        bbutil_render_text(font, "Blue",		70.0f + x,	-160.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
+        bbutil_render_text(font, "Yellow",		70.0f + x,	-220.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
+
+        matrix_free(matrix_menu_modelView);
+        matrix_menu_modelView = NULL;
     }
 
-    glDisableClientState(GL_VERTEX_ARRAY);
-    glDisableClientState(GL_TEXTURE_COORD_ARRAY);
-    glDisable(GL_TEXTURE_2D);
+    glDisableVertexAttribArray(uvAtt);
+    glDisableVertexAttribArray(vertAtt);
 
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    /*
     //Then render the cube
     enable_3d();
     glEnable(GL_LIGHTING);
@@ -683,12 +828,10 @@ void render() {
     glRotatef(15.0f, 0.0f, 0.0f, 1.0f);
     glRotatef(angle, 0.0f, 1.0f, 0.0f);
 
-    //glColor4f(cube_color[0], cube_color[1], cube_color[2], cube_color[3]);
-
     glEnableClientState(GL_VERTEX_ARRAY);
     glEnableClientState(GL_NORMAL_ARRAY);
     glEnableClientState(GL_TEXTURE_COORD_ARRAY);
-
+    */
     // regenerate texture
     pthread_mutex_lock(&bufMutex);
     bufWaitingConsumer = true;
@@ -707,7 +850,7 @@ void render() {
         pthread_cond_signal(&bufCond);
     }
     pthread_mutex_unlock(&bufMutex);
-
+    /*
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); // set up settings
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR); // set up some more settings
 
@@ -733,6 +876,9 @@ void render() {
     glDisable(GL_COLOR_MATERIAL);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_TEXTURE_2D);
+    */
+
+    glUseProgram(0);
 
     //Use utility code to update the screen
     bbutil_swap();
@@ -754,7 +900,6 @@ void render() {
         }
         count = 0;
     }
-
 }
 
 int read_from_file() {
@@ -906,19 +1051,11 @@ int main(int argc, char *argv[]) {
                                     CAMERA_IMGPROP_CREATEWINDOW, 0,
                                     CAMERA_IMGPROP_FORMAT, CAMERA_FRAMETYPE_RGB8888,
                                     CAMERA_IMGPROP_FRAMERATE, 30.0,
-#ifdef DA_B_CAMERA_RES
-                                    // note: output texture width needs to be a power of 2 apparently for this to work,
-                                    // despite my efforts to use glPixelStorei()
-                                    CAMERA_IMGPROP_ROTATION, 90,
-                                    CAMERA_IMGPROP_WIDTH, 576,
-									CAMERA_IMGPROP_HEIGHT, 1024)) return 0;
-#else
                                     // note: output texture width needs to be a power of 2 apparently for this to work,
                                     // despite my efforts to use glPixelStorei()
                                     CAMERA_IMGPROP_ROTATION, 90,
                                     CAMERA_IMGPROP_WIDTH, 576,
                                     CAMERA_IMGPROP_HEIGHT, 1024)) return 0;
-#endif
     fprintf(stderr, "prop1\n");
     if (camera_start_video_viewfinder(handle, vf_callback, NULL, NULL)) return 0;
     fprintf(stderr, "start\n");
