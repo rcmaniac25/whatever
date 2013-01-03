@@ -49,6 +49,7 @@
 //Uncomment if compiling for DevAlpha B
 //#define DA_B_CAMERA_RES
 
+//OpenGL variables
 static GLfloat radio_btn_unselected_vertices[8], radio_btn_selected_vertices[8],
         background_portrait_vertices[8], background_landscape_vertices[8],
         *background_vertices;
@@ -69,6 +70,7 @@ static float menu_animation, menu_height, button_size_x, button_size_y;
 static float pos_x, pos_y;
 static float cube_pos_x, cube_pos_y, cube_pos_z;
 
+//Camera variables
 static GLuint textureID;
 
 static pthread_mutex_t bufMutex = PTHREAD_MUTEX_INITIALIZER;
@@ -560,12 +562,12 @@ int initialize() {
 
     background_portrait_tex_coord[0] = 0.0f;
     background_portrait_tex_coord[1] = 0.0f;
-    background_portrait_tex_coord[2] = 128;
+    background_portrait_tex_coord[2] = tex_x;
     background_portrait_tex_coord[3] = 0.0f;
     background_portrait_tex_coord[4] = 0.0f;
-    background_portrait_tex_coord[5] = 128;
-    background_portrait_tex_coord[6] = 128;
-    background_portrait_tex_coord[7] = 128;
+    background_portrait_tex_coord[5] = tex_y;
+    background_portrait_tex_coord[6] = tex_x;
+    background_portrait_tex_coord[7] = tex_y;
 
     angle = 0.0f;
     pos_x = 0.0f;
@@ -659,6 +661,17 @@ int initialize() {
    			"    gl_FragColor = texture2D(tex, uv);"
    			"}";
 
+   	const char* vSource_cube =
+			"attribute vec3 vertexPosition;"
+			"attribute vec2 uvPosition;"
+			"uniform mat4 perspectiveMatrix;"
+			"varying vec2 uv;"
+			"void main()"
+			"{"
+			"    gl_Position = perspectiveMatrix * vec4(vertexPosition, 1.0);"
+			"    uv = uvPosition;"
+			"}";
+
     program_menu = loadShader(vSource_menu, fSource_menu);
     if(program_menu == 0) {
     	fprintf(stderr, "Initialize menu program\n");
@@ -735,24 +748,26 @@ unsigned long lower_power_of_two(unsigned long v)
 }
 
 void render() {
-	//TODO: Update
     int i;
 
     //Typical render pass
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    //First render background and menu if it is enabled
-    glUseProgram(program_menu);
+    //Setup matrices for menu
     if(!matrix_menu_projection)
 	{
-    	GLint pAtt = glGetUniformLocation(program_menu, "perspectiveMatrix");
 		matrix_menu_projection = createMatrix_menu_projection();
-		glUniformMatrix4fv(pAtt, 1, GL_FALSE, matrix_menu_projection);
 	}
     if(!matrix_menu_modelView)
 	{
 		matrix_menu_modelView = createMatrix_menu_modelView();
 	}
+
+    //First render background and menu if it is enabled
+    glUseProgram(program_menu);
+
+    GLint pAtt = glGetUniformLocation(program_menu, "perspectiveMatrix");
+	glUniformMatrix4fv(pAtt, 1, GL_FALSE, matrix_menu_projection);
 
     GLint mvAtt = glGetUniformLocation(program_menu, "modelViewMatrix");
 	glUniformMatrix4fv(mvAtt, 1, GL_FALSE, matrix_menu_modelView);
@@ -777,8 +792,8 @@ void render() {
 
     if (menu_active || menu_show_animation || menu_hide_animation) {
     	GLfloat x = pos_x, y = pos_y;
-        matrix_menu_modelView = matrix_multiply_delete(matrix_menu_modelView, TRUE, matrix_translate(pos_x, pos_y, 0.0f), TRUE);
-        glUniformMatrix4fv(mvAtt, 1, GL_FALSE, matrix_menu_modelView);
+        matrix4f menuMat = matrix_multiply_delete(matrix_menu_modelView, FALSE, matrix_translate(pos_x, pos_y, 0.0f), TRUE);
+        glUniformMatrix4fv(mvAtt, 1, GL_FALSE, menuMat);
 
         for (i = 0; i < 4; i++) {
             if (i == selected) {
@@ -792,20 +807,21 @@ void render() {
             }
 
             glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-            matrix_menu_modelView = matrix_multiply_delete(matrix_menu_modelView, TRUE, matrix_translate(0.0f, 60.0f, 0.0f), TRUE);
-            glUniformMatrix4fv(mvAtt, 1, GL_FALSE, matrix_menu_modelView);
+            menuMat = matrix_multiply_delete(menuMat, TRUE, matrix_translate(0.0f, 60.0f, 0.0f), TRUE);
+            glUniformMatrix4fv(mvAtt, 1, GL_FALSE, menuMat);
         }
 
-        //TODO: Figure out proper text translation
+        matrix_get_translation(menuMat, &x, &y, NULL);
+        x *= width;
+        y *= height;
 
-        bbutil_render_text(font, "Color Menu",	10.0f + x,	10.0f + y,		0.35f, 0.35f, 0.35f, 1.0f);
-        bbutil_render_text(font, "Red",			70.0f + x,	-40.0f + y,		0.35f, 0.35f, 0.35f, 1.0f);
-        bbutil_render_text(font, "Green",		70.0f + x,	-100.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
-        bbutil_render_text(font, "Blue",		70.0f + x,	-160.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
-        bbutil_render_text(font, "Yellow",		70.0f + x,	-220.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
+        bbutil_render_text(font, "Color Menu",	10.0f + x, 10.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
+        bbutil_render_text(font, "Red",			70.0f + x, -40.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
+        bbutil_render_text(font, "Green",		70.0f + x, -100.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
+        bbutil_render_text(font, "Blue",		70.0f + x, -160.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
+        bbutil_render_text(font, "Yellow",		70.0f + x, -220.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
 
-        matrix_free(matrix_menu_modelView);
-        matrix_menu_modelView = NULL;
+        matrix_free(menuMat);
     }
 
     glDisableVertexAttribArray(uvAtt);
@@ -813,6 +829,7 @@ void render() {
 
     glBindTexture(GL_TEXTURE_2D, 0);
 
+    //TODO
     /*
     //Then render the cube
     enable_3d();

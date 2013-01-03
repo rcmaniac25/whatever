@@ -41,6 +41,10 @@ void matrix_printout(const matrix4f matrix);
 
 void matrix_get_translation(const matrix4f matrix, GLfloat* x, GLfloat* y, GLfloat* z);
 
+//count is in number of elements, not components ({x,y,z},{x,y,z} would be 2, not 6)
+BOOL matrix_transform_vector(const matrix4f matrix, int dim, int count, const GLfloat* source, GLfloat* dest);
+BOOL matrix_transform_normal(const matrix4f matrix, int dim, int count, const GLfloat* source, GLfloat* dest);
+
 matrix4f matrix_scale(GLfloat x, GLfloat y, GLfloat z);
 matrix4f matrix_translate(GLfloat x, GLfloat y, GLfloat z);
 matrix4f matrix_rotate(GLfloat angle, GLfloat x, GLfloat y, GLfloat z);

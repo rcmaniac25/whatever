@@ -146,6 +146,49 @@ void matrix_get_translation(const matrix4f matrix, GLfloat* x, GLfloat* y, GLflo
 	}
 }
 
+void matrix_transform_internal(const GLfloat* matrix, int sideLen, int dim, int count, BOOL translate, const GLfloat* source, GLfloat* dest)
+{
+	int i;
+	int c;
+	int m;
+	for(i = 0; i < count; i++)
+	{
+		for(c = 0; c < dim; c++)
+		{
+			int destPos = i * dim + c;
+			dest[destPos] = 0.0f;
+			for(m = 0; m < dim; m++)
+			{
+				dest[destPos] += source[i * dim + c] * matrix[m * dim + c];
+			}
+			if(translate && dim < sideLen)
+			{
+				dest[destPos] += matrix[(sideLen - 1) * sideLen + c];
+			}
+		}
+	}
+}
+
+BOOL matrix_transform_vector(const matrix4f matrix, int dim, int count, const GLfloat* source, GLfloat* dest)
+{
+	if(!matrix || dim < 1 || dim > 4 || !source || !dest)
+	{
+		return FALSE;
+	}
+	matrix_transform_internal(matrix, 4, dim, count, TRUE, source, dest);
+	return TRUE;
+}
+
+BOOL matrix_transform_normal(const matrix4f matrix, int dim, int count, const GLfloat* source, GLfloat* dest)
+{
+	if(!matrix || dim < 1 || dim > 4 || !source || !dest)
+	{
+		return FALSE;
+	}
+	matrix_transform_internal(matrix, 4, dim, count, FALSE, source, dest);
+	return TRUE;
+}
+
 matrix4f matrix_scale(GLfloat x, GLfloat y, GLfloat z)
 {
 	GLfloat* ret = calloc(4 * 4, sizeof(GLfloat));
@@ -215,7 +258,7 @@ matrix4f matrix_rotate(GLfloat angle, GLfloat x, GLfloat y, GLfloat z)
 	return ret;
 }
 
-void matrix_multiple_internal(GLfloat* m1, GLfloat* m2, GLfloat* product, int sideLen)
+void matrix_multiple_internal(const GLfloat* m1, const GLfloat* m2, GLfloat* product, int sideLen)
 {
 	int i, j, k;
 
