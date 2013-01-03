@@ -678,6 +678,59 @@ int initialize() {
 			"    gl_FragColor = texture2D(tex, uv);"
 			"}";
 
+   	//From http://coding-experiments.blogspot.com/2010/06/edge-detection.html
+   	const char* fSource_cube_edge =
+			"#ifdef GL_ES\r\n"
+			"    #ifdef GL_FRAGMENT_PRECISION_HIGH\r\n"
+			"        precision highp float;\r\n"
+			"    #else\r\n"
+			"        precision mediump float;\r\n"
+			"    #endif\r\n"
+			"#endif\r\n"
+			"varying vec2 uv;"
+			"uniform sampler2D tex;"
+   			"uniform vec2 imageSize;"
+   			"float threshold(in float thr1, in float thr2 , in float val) {"
+			"    if (val < thr1) {return 0.0;}"
+			"    if (val > thr2) {return 1.0;}"
+			"    return val;"
+   			"}"
+   			"// averaged pixel intensity from 3 color channels\r\n"
+   			"float avg_intensity(in vec4 pix) {"
+   			"    return (pix.r + pix.g + pix.b)/3.;"
+   			"}"
+   			"vec4 get_pixel(in vec2 coords, in float dx, in float dy) {"
+   			"    return texture2D(tex,coords + vec2(dx, dy));"
+   			"}"
+   			"// returns pixel color\r\n"
+   			"float IsEdge(in vec2 coords){"
+			"    float dxtex = 1.0 / imageSize.x /*image width*/;"
+			"    float dytex = 1.0 / imageSize.y /*image height*/;"
+			"    float pix[9];"
+			"    int k = -1;"
+			"    float delta;"
+			"    // read neighboring pixel intensities\r\n"
+			"    for (int i=-1; i<2; i++) {"
+			"        for(int j=-1; j<2; j++) {"
+			"            k++;"
+			"            pix[k] = avg_intensity(get_pixel(coords,float(i)*dxtex,float(j)*dytex));"
+			"        }"
+			"    }"
+			"    // average color differences around neighboring pixels\r\n"
+			"    delta = (abs(pix[1]-pix[7])+"
+			"            abs(pix[5]-pix[3]) +"
+			"            abs(pix[0]-pix[8])+"
+			"            abs(pix[2]-pix[6])"
+			"            )/4.;"
+			"    return threshold(0.25,0.4,clamp(1.8*delta,0.0,1.0));"
+   			"}"
+			"void main()"
+			"{"
+   			"    vec4 color = vec4(0.0,0.0,0.0,1.0);"
+   			"    color.g = IsEdge(uv);"
+   			"    gl_FragColor = color;"
+			"}";
+
     program_menu = loadShader(vSource_menu, fSource_menu);
     if(program_menu == 0) {
     	fprintf(stderr, "Initialize menu program\n");
@@ -689,7 +742,13 @@ int initialize() {
 		fprintf(stderr, "Initialize cube program\n");
 		return EXIT_FAILURE;
 	}
-	programs_cube[0] = programs_cube[1] = programs_cube[2] = programs_cube[3]; //For now, set every shader to the default shader
+	programs_cube[0] = programs_cube[1] = programs_cube[3]; //For now, set every shader to the default shader
+
+	programs_cube[2] = loadShader(vSource_cube, fSource_cube_edge);
+	if(programs_cube[2] == 0) {
+		fprintf(stderr, "Initialize cube program (edge)\n");
+		return EXIT_FAILURE;
+	}
 
     matrix_menu_projection = NULL;
     matrix_menu_modelView = NULL;
@@ -882,6 +941,12 @@ void render() {
     int w = lower_power_of_two(cameraBuf->framedesc.rgb8888.width);
     int h = lower_power_of_two(cameraBuf->framedesc.rgb8888.height);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_BGRA, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, cameraBuf->framebuf);
+    GLint texSize = glGetUniformLocation(selectedCubeShader, "imageSize");
+	if(texSize >= 0)
+	{
+		GLfloat imgSize[] = {cameraBuf->framedesc.rgb8888.width, cameraBuf->framedesc.rgb8888.height};
+		glUniform2fv(texSize, 1, imgSize);
+	}
     //glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
     if (bufWaitingProducer) {
         pthread_cond_signal(&bufCond);
