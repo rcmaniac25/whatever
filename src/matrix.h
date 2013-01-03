@@ -31,7 +31,11 @@ typedef GLfloat* matrix4f;
 matrix4f matrix_ortho(GLfloat left, GLfloat right, GLfloat bottom, GLfloat top, GLfloat near, GLfloat far);
 matrix4f matrix_frustum(GLfloat left, GLfloat right, GLfloat bottom, GLfloat top, GLfloat near, GLfloat far);
 
+BOOL matrix_ortho_set(GLfloat left, GLfloat right, GLfloat bottom, GLfloat top, GLfloat near, GLfloat far, matrix4f matrix);
+BOOL matrix_frustum_set(GLfloat left, GLfloat right, GLfloat bottom, GLfloat top, GLfloat near, GLfloat far, matrix4f matrix);
+
 matrix4f matrix_identiy();
+void matrix_identiy_set(matrix4f matrix);
 matrix4f matrix_create(	GLfloat m11, GLfloat m21, GLfloat m31, GLfloat m41,
 						GLfloat m12, GLfloat m22, GLfloat m32, GLfloat m42,
 						GLfloat m13, GLfloat m23, GLfloat m33, GLfloat m43,
@@ -48,6 +52,10 @@ BOOL matrix_transform_normal(const matrix4f matrix, int dim, int count, const GL
 matrix4f matrix_scale(GLfloat x, GLfloat y, GLfloat z);
 matrix4f matrix_translate(GLfloat x, GLfloat y, GLfloat z);
 matrix4f matrix_rotate(GLfloat angle, GLfloat x, GLfloat y, GLfloat z);
+
+void matrix_scale_set(GLfloat x, GLfloat y, GLfloat z, matrix4f matrix);
+void matrix_translate_set(GLfloat x, GLfloat y, GLfloat z, matrix4f matrix);
+void matrix_rotate_set(GLfloat angle, GLfloat x, GLfloat y, GLfloat z, matrix4f matrix);
 
 matrix4f matrix_multiply_delete(const matrix4f m1, BOOL freeM1, const matrix4f m2, BOOL freeM2);
 matrix4f matrix_multiply(const matrix4f m1, const matrix4f m2);

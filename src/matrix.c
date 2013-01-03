@@ -7,6 +7,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <math.h>
 
@@ -14,35 +15,62 @@
 
 matrix4f matrix_ortho(GLfloat left, GLfloat right, GLfloat bottom, GLfloat top, GLfloat near, GLfloat far)
 {
-	if(left == right || bottom == top || near == far)
-	{
-		return NULL;
-	}
-	GLfloat tx = -(right + left) / (right - left);
-	GLfloat ty = -(top + bottom) / (top - bottom);
-	GLfloat tz = -(far + near) / (far - near);
-
 	GLfloat* ret = calloc(4 * 4, sizeof(GLfloat));
 	if(ret)
 	{
-		ret[0] = 2.0f / (right - left);
-		ret[5] = 2.0f / (top - bottom);
-		ret[10] = -2.0f / (far - near);
-
-		ret[12] = tx;
-		ret[13] = ty;
-		ret[14] = tz;
-
-		ret[15] = 1.0f;
+		if(!matrix_ortho_set(left, right, bottom, top, near, far, ret))
+		{
+			free(ret);
+			return NULL;
+		}
 	}
 	return ret;
 }
 
 matrix4f matrix_frustum(GLfloat left, GLfloat right, GLfloat bottom, GLfloat top, GLfloat near, GLfloat far)
 {
-	if(left == right || bottom == top || near == far || near < 0.0f || far < 0.0f)
+	GLfloat* ret = calloc(4 * 4, sizeof(GLfloat));
+	if(ret)
 	{
-		return NULL;
+		if(!matrix_frustum_set(left, right, bottom, top, near, far, ret))
+		{
+			free(ret);
+			return NULL;
+		}
+	}
+	return ret;
+}
+
+BOOL matrix_ortho_set(GLfloat left, GLfloat right, GLfloat bottom, GLfloat top, GLfloat near, GLfloat far, matrix4f matrix)
+{
+	if(!matrix || left == right || bottom == top || near == far)
+	{
+		return FALSE;
+	}
+	GLfloat tx = -(right + left) / (right - left);
+	GLfloat ty = -(top + bottom) / (top - bottom);
+	GLfloat tz = -(far + near) / (far - near);
+
+	memset(matrix, 0, sizeof(GLfloat) * 4 * 4);
+
+	matrix[0] = 2.0f / (right - left);
+	matrix[5] = 2.0f / (top - bottom);
+	matrix[10] = -2.0f / (far - near);
+
+	matrix[12] = tx;
+	matrix[13] = ty;
+	matrix[14] = tz;
+
+	matrix[15] = 1.0f;
+
+	return TRUE;
+}
+
+BOOL matrix_frustum_set(GLfloat left, GLfloat right, GLfloat bottom, GLfloat top, GLfloat near, GLfloat far, matrix4f matrix)
+{
+	if(!matrix || left == right || bottom == top || near == far || near < 0.0f || far < 0.0f)
+	{
+		return FALSE;
 	}
 
 	GLfloat A = (right + left) / (right - left);
@@ -50,33 +78,39 @@ matrix4f matrix_frustum(GLfloat left, GLfloat right, GLfloat bottom, GLfloat top
 	GLfloat C = -(far + near) / (far - near);
 	GLfloat D = -(2.0f * far * near) / (far - near);
 
-	GLfloat* ret = calloc(4 * 4, sizeof(GLfloat));
-	if(ret)
-	{
-		ret[0] = (2.0f * near) / (right - left);
-		ret[5] = (2.0f * near) / (top - bottom);
+	memset(matrix, 0, sizeof(GLfloat) * 4 * 4);
 
-		ret[8] = A;
-		ret[9] = B;
-		ret[10] = C;
-		ret[11] = -1.0f;
+	matrix[0] = (2.0f * near) / (right - left);
+	matrix[5] = (2.0f * near) / (top - bottom);
 
-		ret[14] = D;
-	}
-	return ret;
+	matrix[8] = A;
+	matrix[9] = B;
+	matrix[10] = C;
+	matrix[11] = -1.0f;
+
+	matrix[14] = D;
+
+	return TRUE;
 }
 
 matrix4f matrix_identiy()
 {
 	GLfloat* ret = calloc(4 * 4, sizeof(GLfloat));
-	if(ret)
-	{
-		ret[0] = 1.0f;
-		ret[5] = 1.0f;
-		ret[10] = 1.0f;
-		ret[15] = 1.0f;
-	}
+	matrix_identiy_set(ret);
 	return ret;
+}
+
+void matrix_identiy_set(matrix4f matrix)
+{
+	if(matrix)
+	{
+		memset(matrix, 0, sizeof(GLfloat) * 4 * 4);
+
+		matrix[0] = 1.0f;
+		matrix[5] = 1.0f;
+		matrix[10] = 1.0f;
+		matrix[15] = 1.0f;
+	}
 }
 
 matrix4f matrix_create(	GLfloat m11, GLfloat m21, GLfloat m31, GLfloat m41,
@@ -192,38 +226,61 @@ BOOL matrix_transform_normal(const matrix4f matrix, int dim, int count, const GL
 matrix4f matrix_scale(GLfloat x, GLfloat y, GLfloat z)
 {
 	GLfloat* ret = calloc(4 * 4, sizeof(GLfloat));
-	if(ret)
-	{
-		ret[0] = x;
-		ret[5] = y;
-		ret[10] = z;
-		ret[15] = 1.0f;
-	}
+	matrix_scale_set(x, y, z, ret);
 	return ret;
 }
 
 matrix4f matrix_translate(GLfloat x, GLfloat y, GLfloat z)
 {
 	GLfloat* ret = calloc(4 * 4, sizeof(GLfloat));
-	if(ret)
-	{
-		ret[0] = 1.0f;
-		ret[5] = 1.0f;
-		ret[10] = 1.0f;
-		ret[15] = 1.0f;
-
-		ret[12] = x;
-		ret[13] = y;
-		ret[14] = z;
-	}
+	matrix_translate_set(x, y, z, ret);
 	return ret;
 }
 
 matrix4f matrix_rotate(GLfloat angle, GLfloat x, GLfloat y, GLfloat z)
 {
 	GLfloat* ret = calloc(4 * 4, sizeof(GLfloat));
-	if(ret)
+	matrix_rotate_set(angle, x, y, z, ret);
+	return ret;
+}
+
+void matrix_scale_set(GLfloat x, GLfloat y, GLfloat z, matrix4f matrix)
+{
+	if(matrix)
 	{
+		memset(matrix, 0, sizeof(GLfloat) * 4 * 4);
+
+		matrix[0] = x;
+		matrix[5] = y;
+		matrix[10] = z;
+		matrix[15] = 1.0f;
+	}
+}
+
+void matrix_translate_set(GLfloat x, GLfloat y, GLfloat z, matrix4f matrix)
+{
+	if(matrix)
+	{
+		memset(matrix, 0, sizeof(GLfloat) * 4 * 4);
+
+		matrix[0] = 1.0f;
+		matrix[5] = 1.0f;
+		matrix[10] = 1.0f;
+		matrix[15] = 1.0f;
+
+		matrix[12] = x;
+		matrix[13] = y;
+		matrix[14] = z;
+	}
+}
+
+void matrix_rotate_set(GLfloat angle, GLfloat x, GLfloat y, GLfloat z, matrix4f matrix)
+{
+	if(matrix)
+	{
+		//Convert the angle to radians
+		GLfloat rad = angle * (M_PI / 180.0f);
+
 		//Normalize input
 		GLfloat len = sqrtf((x * x) + (y * y) + (z * z));
 		if(len != 0.0f)
@@ -235,27 +292,32 @@ matrix4f matrix_rotate(GLfloat angle, GLfloat x, GLfloat y, GLfloat z)
 		}
 
 		//Calculate sin/cos
-		GLfloat c = cosf(angle);
-		GLfloat s = sinf(angle);
+		GLfloat c = cosf(rad);
+		GLfloat s = sinf(rad);
 
 		GLfloat invC = 1.0f - c;
 
 		//Setup the matrix
-		ret[0] = ((x * x) * invC) + c;
-		ret[1] = (x * y * invC) + (z * s);
-		ret[2] = (x * z * invC) - (y * s);
+		matrix[0] = ((x * x) * invC) + c;
+		matrix[1] = (x * y * invC) + (z * s);
+		matrix[2] = (x * z * invC) - (y * s);
+		matrix[3] = 0.0f;
 
-		ret[4] = (x * y * invC) - (z * s);
-		ret[5] = ((y * y) * invC) + c;
-		ret[6] = (y * z * invC) + (x * s);
+		matrix[4] = (x * y * invC) - (z * s);
+		matrix[5] = ((y * y) * invC) + c;
+		matrix[6] = (y * z * invC) + (x * s);
+		matrix[7] = 0.0f;
 
-		ret[8] = (x * z * invC) + (y * s);
-		ret[9] = (y * z * invC) - (x * s);
-		ret[10] = ((z * z) * invC) + c;
+		matrix[8] = (x * z * invC) + (y * s);
+		matrix[9] = (y * z * invC) - (x * s);
+		matrix[10] = ((z * z) * invC) + c;
+		matrix[11] = 0.0f;
 
-		ret[15] = 1.0f;
+		matrix[12] = 0.0f;
+		matrix[13] = 0.0f;
+		matrix[14] = 0.0f;
+		matrix[15] = 1.0f;
 	}
-	return ret;
 }
 
 void matrix_multiple_internal(const GLfloat* m1, const GLfloat* m2, GLfloat* product, int sideLen)

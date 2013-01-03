@@ -38,11 +38,10 @@
 #include "matrix.h"
 
 /* TODO:
- * Switch to OpenGL ES 2.0
  * Cleanup code
+ * Change cube shader to use a spotlight (and add normals)
  * Speed up rendering (probably slow from the mutex)
- * Make sure device rotation is handled correctly
- * Figure out why drawn texture is "offset"
+ * Rotate camera when device rotates
  * Replace "colors" with "shaders" so filter effects can be done
  */
 
@@ -58,14 +57,15 @@ static GLfloat radio_btn_unselected_tex_coord[8],
         background_landscape_tex_coord[8], *background_tex_coord;
 static GLuint radio_btn_unselected, radio_btn_selected, background_landscape,
         background_portrait, background;
-static GLfloat* matrix_menu_projection, *matrix_menu_modelView;
+static GLfloat* matrix_menu_projection, *matrix_menu_modelView,
+		*matrix_cube_projection, *matrix_cube_modelView;
 static GLuint program_menu;
+static GLuint programs_cube[4];
 static screen_context_t screen_cxt;
 static font_t* font;
 static float width, height, angle;
 static int shutdown, menu_active, menu_hide_animation, menu_show_animation;
 static int selected;
-static float cube_color[4];
 static float menu_animation, menu_height, button_size_x, button_size_y;
 static float pos_x, pos_y;
 static float cube_pos_x, cube_pos_y, cube_pos_z;
@@ -157,33 +157,17 @@ void handleClick(int x, int y) {
                 && (y < menu_height - 3 * button_size_y) && (x > 0)
                 && (x < button_size_x)) {
             selected = 3;
-            cube_color[0] = 1.0f;
-            cube_color[1] = 0.0f;
-            cube_color[2] = 0.0f;
-            cube_color[3] = 1.0f;
         } else if ((y > menu_height - 3 * button_size_y)
                 && (y < menu_height - 2 * button_size_y) && (x > 0)
                 && (x < button_size_x)) {
             selected = 2;
-            cube_color[0] = 0.0f;
-            cube_color[1] = 1.0f;
-            cube_color[2] = 0.0f;
-            cube_color[3] = 1.0f;
         } else if ((y > menu_height - 2 * button_size_y)
                 && (y < menu_height - button_size_y) && (x > 0)
                 && (x < button_size_x)) {
             selected = 1;
-            cube_color[0] = 0.0f;
-            cube_color[1] = 0.0f;
-            cube_color[2] = 1.0f;
-            cube_color[3] = 1.0f;
         } else if ((y > menu_height - button_size_y) && (y < menu_height)
                 && (x > 0) && (x < button_size_x)) {
             selected = 0;
-            cube_color[0] = 1.0f;
-            cube_color[1] = 1.0f;
-            cube_color[2] = 0.0f;
-            cube_color[3] = 1.0f;
         } else {
             menu_hide_animation = true;
             menu_show_animation = false;
@@ -327,6 +311,16 @@ int resize(bps_event_t *event) {
 	{
 		matrix_free(matrix_menu_modelView);
 		matrix_menu_modelView = NULL;
+	}
+    if(matrix_cube_projection)
+	{
+		matrix_free(matrix_cube_projection);
+		matrix_cube_projection = NULL;
+	}
+	if(matrix_cube_modelView)
+	{
+		matrix_free(matrix_cube_modelView);
+		matrix_cube_modelView = NULL;
 	}
 
     if (width > height) {
@@ -601,10 +595,6 @@ int initialize() {
     //See if a savefile exists. If not, initialize to a hidden menu and a red cube.
     if (!read_from_file()) {
         selected = 3;
-        cube_color[0] = 1.0f;
-        cube_color[1] = 0.0f;
-        cube_color[2] = 0.0f;
-        cube_color[3] = 1.0f;
 
         menu_animation = 0.0f;
         menu_active = false;
@@ -662,14 +652,30 @@ int initialize() {
    			"}";
 
    	const char* vSource_cube =
-			"attribute vec3 vertexPosition;"
+   			"attribute vec3 vertexPosition;"
 			"attribute vec2 uvPosition;"
+			"uniform mat4 modelViewMatrix;"
 			"uniform mat4 perspectiveMatrix;"
 			"varying vec2 uv;"
 			"void main()"
 			"{"
-			"    gl_Position = perspectiveMatrix * vec4(vertexPosition, 1.0);"
+			"    gl_Position = perspectiveMatrix * modelViewMatrix * vec4(vertexPosition, 1.0);"
 			"    uv = uvPosition;"
+			"}";
+
+   	const char* fSource_cube =
+			"#ifdef GL_ES\r\n"
+			"    #ifdef GL_FRAGMENT_PRECISION_HIGH\r\n"
+			"        precision highp float;\r\n"
+			"    #else\r\n"
+			"        precision mediump float;\r\n"
+			"    #endif\r\n"
+			"#endif\r\n"
+			"varying vec2 uv;"
+			"uniform sampler2D tex;"
+			"void main()"
+			"{"
+			"    gl_FragColor = texture2D(tex, uv);"
 			"}";
 
     program_menu = loadShader(vSource_menu, fSource_menu);
@@ -678,8 +684,17 @@ int initialize() {
 		return EXIT_FAILURE;
     }
 
+    programs_cube[3] = loadShader(vSource_cube, fSource_cube);
+	if(programs_cube[3] == 0) {
+		fprintf(stderr, "Initialize cube program\n");
+		return EXIT_FAILURE;
+	}
+	programs_cube[0] = programs_cube[1] = programs_cube[2] = programs_cube[3]; //For now, set every shader to the default shader
+
     matrix_menu_projection = NULL;
     matrix_menu_modelView = NULL;
+    matrix_cube_projection = NULL;
+    matrix_cube_modelView = NULL;
 
     menu_show_animation = true;
     return EXIT_SUCCESS;
@@ -815,11 +830,11 @@ void render() {
         x *= width;
         y *= height;
 
-        bbutil_render_text(font, "Color Menu",	10.0f + x, 10.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
-        bbutil_render_text(font, "Red",			70.0f + x, -40.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
-        bbutil_render_text(font, "Green",		70.0f + x, -100.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
-        bbutil_render_text(font, "Blue",		70.0f + x, -160.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
-        bbutil_render_text(font, "Yellow",		70.0f + x, -220.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
+        bbutil_render_text(font, "Effect Menu",	10.0f + x, 10.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
+        bbutil_render_text(font, "No effect",	70.0f + x, -40.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
+        bbutil_render_text(font, "Edge detect",	70.0f + x, -100.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
+        bbutil_render_text(font, "??",			70.0f + x, -160.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
+        bbutil_render_text(font, "??",			70.0f + x, -220.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
 
         matrix_free(menuMat);
     }
@@ -829,26 +844,31 @@ void render() {
 
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    //TODO
-    /*
-    //Then render the cube
-    enable_3d();
-    glEnable(GL_LIGHTING);
-    glEnable(GL_LIGHT0);
-    glEnable(GL_COLOR_MATERIAL);
-    glEnable(GL_DEPTH_TEST);
-    glEnable(GL_TEXTURE_2D);
+    //Setup the matrices for the cube
+    if(!matrix_cube_projection)
+	{
+		matrix_cube_projection = createMatrix_3d_projection();
+	}
+	if(!matrix_cube_modelView)
+	{
+		matrix_cube_modelView = matrix_translate(cube_pos_x, cube_pos_y, cube_pos_z);
+		matrix_cube_modelView = matrix_multiply_delete(matrix_cube_modelView, TRUE, matrix_rotate(30.0f, 1.0f, 0.0f, 0.0f), TRUE);
+		matrix_cube_modelView = matrix_multiply_delete(matrix_cube_modelView, TRUE, matrix_rotate(15.0f, 0.0f, 0.0f, 1.0f), TRUE);
+	}
 
-    glTranslatef(cube_pos_x, cube_pos_y, cube_pos_z);
+	matrix4f mvCube = matrix_multiply_delete(matrix_cube_modelView, FALSE, matrix_rotate(angle, 0.0f, 1.0f, 0.0f), TRUE);
 
-    glRotatef(30.0f, 1.0f, 0.0f, 0.0f);
-    glRotatef(15.0f, 0.0f, 0.0f, 1.0f);
-    glRotatef(angle, 0.0f, 1.0f, 0.0f);
+	GLuint selectedCubeShader = programs_cube[selected];
+	glUseProgram(selectedCubeShader);
 
-    glEnableClientState(GL_VERTEX_ARRAY);
-    glEnableClientState(GL_NORMAL_ARRAY);
-    glEnableClientState(GL_TEXTURE_COORD_ARRAY);
-    */
+	pAtt = glGetUniformLocation(selectedCubeShader, "perspectiveMatrix");
+	glUniformMatrix4fv(pAtt, 1, GL_FALSE, matrix_cube_projection);
+
+	mvAtt = glGetUniformLocation(selectedCubeShader, "modelViewMatrix");
+	glUniformMatrix4fv(mvAtt, 1, GL_FALSE, mvCube);
+
+	//TODO: Setup lighting
+
     // regenerate texture
     pthread_mutex_lock(&bufMutex);
     bufWaitingConsumer = true;
@@ -867,33 +887,38 @@ void render() {
         pthread_cond_signal(&bufCond);
     }
     pthread_mutex_unlock(&bufMutex);
-    /*
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); // set up settings
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR); // set up some more settings
 
+    vertAtt = glGetAttribLocation(selectedCubeShader, "vertexPosition");
+	glEnableVertexAttribArray(vertAtt);
+	//TODO: Setup normals
+	uvAtt = glGetAttribLocation(selectedCubeShader, "uvPosition");
+	glEnableVertexAttribArray(uvAtt);
 
-    glVertexPointer(3, GL_FLOAT, 0, cube_vertices);
-    glNormalPointer(GL_FLOAT, 0, cube_normals);
-    glTexCoordPointer(2, GL_FLOAT, 0, cube_tex_coords);
-    glBindTexture(GL_TEXTURE_2D, textureID);
+    glVertexAttribPointer(vertAtt, 3, GL_FLOAT, GL_FALSE, 0, cube_vertices);
+    //TODO: set normals (cube_normals)
+	glVertexAttribPointer(uvAtt, 2, GL_FLOAT, GL_FALSE, 0, cube_tex_coords);
+    tAtt = glGetUniformLocation(selectedCubeShader, "tex");
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, textureID);
+	glUniform1i(tAtt, 0);
 
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-    glDrawArrays(GL_TRIANGLE_STRIP, 4, 4);
-    glDrawArrays(GL_TRIANGLE_STRIP, 8, 4);
-    glDrawArrays(GL_TRIANGLE_STRIP, 12, 4);
-    glDrawArrays(GL_TRIANGLE_STRIP, 16, 4);
-    glDrawArrays(GL_TRIANGLE_STRIP, 20, 4);
+	//Then render the cube
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+	glDrawArrays(GL_TRIANGLE_STRIP, 4, 4);
+	glDrawArrays(GL_TRIANGLE_STRIP, 8, 4);
+	glDrawArrays(GL_TRIANGLE_STRIP, 12, 4);
+	glDrawArrays(GL_TRIANGLE_STRIP, 16, 4);
+	glDrawArrays(GL_TRIANGLE_STRIP, 20, 4);
 
-    glDisableClientState(GL_VERTEX_ARRAY);
-    glDisableClientState(GL_NORMAL_ARRAY);
-    glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+	glDisableVertexAttribArray(uvAtt);
+	//TODO: disable normals
+	glDisableVertexAttribArray(vertAtt);
 
-    glDisable(GL_LIGHTING);
-    glDisable(GL_LIGHT0);
-    glDisable(GL_COLOR_MATERIAL);
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_TEXTURE_2D);
-    */
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+    matrix_free(mvCube);
 
     glUseProgram(0);
 
@@ -932,29 +957,9 @@ int read_from_file() {
     if (rc == -1) {
         return false;
     } else {
-        if (selected == 0) {
-            cube_color[0] = 1.0f;
-            cube_color[1] = 1.0f;
-            cube_color[2] = 0.0f;
-            cube_color[3] = 1.0f;
-        } else if (selected == 1) {
-            cube_color[0] = 0.0f;
-            cube_color[1] = 0.0f;
-            cube_color[2] = 1.0f;
-            cube_color[3] = 1.0f;
-        } else if (selected == 2) {
-            cube_color[0] = 0.0f;
-            cube_color[1] = 1.0f;
-            cube_color[2] = 0.0f;
-            cube_color[3] = 1.0f;
-        } else if (selected == 3) {
-            cube_color[0] = 1.0f;
-            cube_color[1] = 0.0f;
-            cube_color[2] = 0.0f;
-            cube_color[3] = 1.0f;
-        } else {
-            return false;
-        }
+    	if (selected < 0 || selected > 3) {
+    		return false;
+    	}
     }
 
     if (menu_active) {
@@ -1062,7 +1067,6 @@ int main(int argc, char *argv[]) {
 
     // get camera running
     if (camera_open(CAMERA_UNIT_FRONT, CAMERA_MODE_RW, &handle)) return 0;
-    fprintf(stderr, "open\n");
 
     if (camera_set_videovf_property(handle,
                                     CAMERA_IMGPROP_CREATEWINDOW, 0,
@@ -1073,9 +1077,7 @@ int main(int argc, char *argv[]) {
                                     CAMERA_IMGPROP_ROTATION, 90,
                                     CAMERA_IMGPROP_WIDTH, 576,
                                     CAMERA_IMGPROP_HEIGHT, 1024)) return 0;
-    fprintf(stderr, "prop1\n");
     if (camera_start_video_viewfinder(handle, vf_callback, NULL, NULL)) return 0;
-    fprintf(stderr, "start\n");
 
     while (!shutdown) {
         // Handle user input and accelerometer
