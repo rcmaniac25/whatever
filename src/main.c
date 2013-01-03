@@ -31,24 +31,24 @@
 #include <sys/neutrino.h>
 
 #include <EGL/egl.h>
-#include <GLES/gl.h>
-#include <GLES/glext.h>
+#include <GLES2/gl2.h>
+#include <GLES2/gl2ext.h>
 
 #include "bbutil.h"
+#include "matrix.h"
 
 /* TODO:
  * Cleanup code
- * Get rid of memcpy for copying texture
- * Switch to OpenGL ES 2.0
- * Using shaders, switch BGR (from camera) to RGB (for drawing)
- * Make sure rotation is handled correctly
- * Figure out why drawn texture is "offset"
+ * Change cube shader to use a spotlight (and add normals)
+ * Speed up rendering (probably slow from the mutex)
+ * Rotate camera when device rotates
  * Replace "colors" with "shaders" so filter effects can be done
  */
 
 //Uncomment if compiling for DevAlpha B
-#define DA_B_CAMERA_RES
+//#define DA_B_CAMERA_RES
 
+//OpenGL variables
 static GLfloat radio_btn_unselected_vertices[8], radio_btn_selected_vertices[8],
         background_portrait_vertices[8], background_landscape_vertices[8],
         *background_vertices;
@@ -57,21 +57,28 @@ static GLfloat radio_btn_unselected_tex_coord[8],
         background_landscape_tex_coord[8], *background_tex_coord;
 static GLuint radio_btn_unselected, radio_btn_selected, background_landscape,
         background_portrait, background;
+static GLfloat* matrix_menu_projection, *matrix_menu_modelView,
+		*matrix_cube_projection, *matrix_cube_modelView;
+static GLuint program_menu;
+static GLuint programs_cube[4];
 static screen_context_t screen_cxt;
 static font_t* font;
 static float width, height, angle;
 static int shutdown, menu_active, menu_hide_animation, menu_show_animation;
 static int selected;
-static float cube_color[4];
 static float menu_animation, menu_height, button_size_x, button_size_y;
 static float pos_x, pos_y;
 static float cube_pos_x, cube_pos_y, cube_pos_z;
+
+//Camera variables
 static GLuint textureID;
-static camera_handle_t handle;
+
 static pthread_mutex_t bufMutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t bufCond = PTHREAD_COND_INITIALIZER;
 static bool bufWaitingProducer = false;
 static bool bufWaitingConsumer = false;
+
+static camera_handle_t handle;
 static camera_buffer_t *cameraBuf = NULL;
 
 GLfloat light_ambient[] = { 0.5f, 0.5f, 0.5f, 1.0f };
@@ -129,18 +136,14 @@ float cube_normals[] = {
         0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f,
         0.0f };
 
-
-#if 1
 // note: since the textures are being cropped it may make sense to scale these values appropriately
 float cube_tex_coords[] = {
-		1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f,	//Front
-		0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f,	//Back
-		0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f,	//Left
-		0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f,	//Right
+		0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f,	1.0f, 0.0f, //Front
+		0.0f, 0.0f, 1.0f, 0.0f,	0.0f, 1.0f, 1.0f, 1.0f, //Back
+		0.0f, 0.0f, 1.0f, 0.0f,	0.0f, 1.0f, 1.0f, 1.0f, //Left
+		0.0f, 0.0f, 1.0f, 0.0f,	0.0f, 1.0f, 1.0f, 1.0f, //Right
 		0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f,	//Top
 		1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f};//Bottom
-#endif
-
 
 int resize();
 void update();
@@ -154,33 +157,17 @@ void handleClick(int x, int y) {
                 && (y < menu_height - 3 * button_size_y) && (x > 0)
                 && (x < button_size_x)) {
             selected = 3;
-            cube_color[0] = 1.0f;
-            cube_color[1] = 0.0f;
-            cube_color[2] = 0.0f;
-            cube_color[3] = 1.0f;
         } else if ((y > menu_height - 3 * button_size_y)
                 && (y < menu_height - 2 * button_size_y) && (x > 0)
                 && (x < button_size_x)) {
             selected = 2;
-            cube_color[0] = 0.0f;
-            cube_color[1] = 1.0f;
-            cube_color[2] = 0.0f;
-            cube_color[3] = 1.0f;
         } else if ((y > menu_height - 2 * button_size_y)
                 && (y < menu_height - button_size_y) && (x > 0)
                 && (x < button_size_x)) {
             selected = 1;
-            cube_color[0] = 0.0f;
-            cube_color[1] = 0.0f;
-            cube_color[2] = 1.0f;
-            cube_color[3] = 1.0f;
         } else if ((y > menu_height - button_size_y) && (y < menu_height)
                 && (x > 0) && (x < button_size_x)) {
             selected = 0;
-            cube_color[0] = 1.0f;
-            cube_color[1] = 1.0f;
-            cube_color[2] = 0.0f;
-            cube_color[3] = 1.0f;
         } else {
             menu_hide_animation = true;
             menu_show_animation = false;
@@ -201,10 +188,8 @@ static void handleScreenEvent(bps_event_t *event) {
     screen_event_t screen_event = screen_event_get_event(event);
 
     //Query type of screen event and its location on the screen
-    screen_get_event_property_iv(screen_event, SCREEN_PROPERTY_TYPE,
-            &screen_val);
-    screen_get_event_property_iv(screen_event, SCREEN_PROPERTY_SOURCE_POSITION,
-            pair);
+    screen_get_event_property_iv(screen_event, SCREEN_PROPERTY_TYPE, &screen_val);
+    screen_get_event_property_iv(screen_event, SCREEN_PROPERTY_SOURCE_POSITION, pair);
 
     //There is a difference between touch screen events and mouse events
     if (screen_val == SCREEN_EVENT_MTOUCH_RELEASE) {
@@ -213,8 +198,7 @@ static void handleScreenEvent(bps_event_t *event) {
 
     } else if (screen_val == SCREEN_EVENT_POINTER) {
         //This is a mouse move event, it is applicable to a device with a usb mouse or simulator
-        screen_get_event_property_iv(screen_event, SCREEN_PROPERTY_BUTTONS,
-                &buttons);
+        screen_get_event_property_iv(screen_event, SCREEN_PROPERTY_BUTTONS, &buttons);
 
         if (buttons == SCREEN_LEFT_MOUSE_BUTTON) {
             //Left mouse button is pressed
@@ -318,6 +302,27 @@ int resize(bps_event_t *event) {
     width = (float) surface_width;
     height = (float) surface_height;
 
+    if(matrix_menu_projection)
+    {
+    	matrix_free(matrix_menu_projection);
+    	matrix_menu_projection = NULL;
+    }
+    if(matrix_menu_modelView)
+	{
+		matrix_free(matrix_menu_modelView);
+		matrix_menu_modelView = NULL;
+	}
+    if(matrix_cube_projection)
+	{
+		matrix_free(matrix_cube_projection);
+		matrix_cube_projection = NULL;
+	}
+	if(matrix_cube_modelView)
+	{
+		matrix_free(matrix_cube_modelView);
+		matrix_cube_modelView = NULL;
+	}
+
     if (width > height) {
         cube_pos_x = 2.9f;
         cube_pos_y = 0.1f;
@@ -332,11 +337,12 @@ int resize(bps_event_t *event) {
         cube_pos_y = -1.0f;
         cube_pos_z = -30.0f;
 
-        //background = background_portrait;
-        background = textureID;
+        background = background_portrait;
         background_vertices = background_portrait_vertices;
         background_tex_coord = background_portrait_tex_coord;
     }
+
+    glViewport(0, 0, (int) width, (int) height);
 
     update();
 
@@ -347,6 +353,88 @@ int resize(bps_event_t *event) {
     }
 
     return EXIT_SUCCESS;
+}
+
+GLuint loadShader(const char* v_source, const char* f_source)
+{
+	GLint status;
+
+	// Compile the vertex shader
+	GLuint vs = glCreateShader(GL_VERTEX_SHADER);
+
+	if (!vs) {
+		fprintf(stderr, "Failed to create vertex shader: %d\n", glGetError());
+		return 0;
+	} else {
+		glShaderSource(vs, 1, &v_source, 0);
+		glCompileShader(vs);
+		glGetShaderiv(vs, GL_COMPILE_STATUS, &status);
+		if (GL_FALSE == status) {
+			GLchar log[256];
+			glGetShaderInfoLog(vs, 256, NULL, log);
+
+			fprintf(stderr, "Failed to compile vertex shader: %s\n", log);
+
+			glDeleteShader(vs);
+
+			return 0;
+		}
+	}
+
+	// Compile the fragment shader
+	GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
+
+	if (!fs) {
+		fprintf(stderr, "Failed to create fragment shader: %d\n", glGetError());
+		return 0;
+	} else {
+		glShaderSource(fs, 1, &f_source, 0);
+		glCompileShader(fs);
+		glGetShaderiv(fs, GL_COMPILE_STATUS, &status);
+		if (GL_FALSE == status) {
+			GLchar log[256];
+			glGetShaderInfoLog(fs, 256, NULL, log);
+
+			fprintf(stderr, "Failed to compile fragment shader: %s\n", log);
+
+			glDeleteShader(vs);
+			glDeleteShader(fs);
+
+			return 0;
+		}
+	}
+
+	// Create and link the program
+	GLuint program = glCreateProgram();
+	if (program)
+	{
+		glAttachShader(program, vs);
+		glAttachShader(program, fs);
+		glLinkProgram(program);
+
+		glGetProgramiv(program, GL_LINK_STATUS, &status);
+		if (status == GL_FALSE)    {
+			GLchar log[256];
+			glGetProgramInfoLog(fs, 256, NULL, log);
+
+			fprintf(stderr, "Failed to link text rendering shader program: %s\n", log);
+
+			glDeleteProgram(program);
+			program = 0;
+		}
+	} else {
+		fprintf(stderr, "Failed to create a shader program\n");
+
+		glDeleteShader(vs);
+		glDeleteShader(fs);
+		return 0;
+	}
+
+	// We don't need the shaders anymore - the program is enough
+	glDeleteShader(fs);
+	glDeleteShader(vs);
+
+	return program;
 }
 
 int initialize() {
@@ -468,12 +556,12 @@ int initialize() {
 
     background_portrait_tex_coord[0] = 0.0f;
     background_portrait_tex_coord[1] = 0.0f;
-    background_portrait_tex_coord[2] = 128;
+    background_portrait_tex_coord[2] = tex_x;
     background_portrait_tex_coord[3] = 0.0f;
     background_portrait_tex_coord[4] = 0.0f;
-    background_portrait_tex_coord[5] = 128;
-    background_portrait_tex_coord[6] = 128;
-    background_portrait_tex_coord[7] = 128;
+    background_portrait_tex_coord[5] = tex_y;
+    background_portrait_tex_coord[6] = tex_x;
+    background_portrait_tex_coord[7] = tex_y;
 
     angle = 0.0f;
     pos_x = 0.0f;
@@ -507,10 +595,6 @@ int initialize() {
     //See if a savefile exists. If not, initialize to a hidden menu and a red cube.
     if (!read_from_file()) {
         selected = 3;
-        cube_color[0] = 1.0f;
-        cube_color[1] = 0.0f;
-        cube_color[2] = 0.0f;
-        cube_color[3] = 1.0f;
 
         menu_animation = 0.0f;
         menu_active = false;
@@ -529,53 +613,174 @@ int initialize() {
     glBindTexture(GL_TEXTURE_2D, textureID);
 
     //Common gl setup
-    glShadeModel(GL_SMOOTH);
+    //TODO: XXX
+    //glShadeModel(GL_SMOOTH);
     glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
 
-    glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient);
-    glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse);
-    glLightfv(GL_LIGHT0, GL_POSITION, light_pos);
-    glLightfv(GL_LIGHT0, GL_SPOT_DIRECTION, light_direction);
+    //glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient);
+    //glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse);
+    //glLightfv(GL_LIGHT0, GL_POSITION, light_pos);
+    //glLightfv(GL_LIGHT0, GL_SPOT_DIRECTION, light_direction);
 
     glEnable(GL_CULL_FACE);
+
+    const char* vSource_menu =
+   			"attribute vec2 vertexPosition;"
+   			"attribute vec2 uvPosition;"
+   			"uniform mat4 modelViewMatrix;"
+   			"uniform mat4 perspectiveMatrix;"
+   			"varying vec2 uv;"
+   			"void main()"
+   			"{"
+   			"    gl_Position = perspectiveMatrix * modelViewMatrix * vec4(vertexPosition, 0.0, 1.0);"
+   			"    uv = uvPosition;"
+   			"}";
+
+   	const char* fSource_menu =
+   			"#ifdef GL_ES\r\n"
+   			"    #ifdef GL_FRAGMENT_PRECISION_HIGH\r\n"
+   			"        precision highp float;\r\n"
+   			"    #else\r\n"
+   			"        precision mediump float;\r\n"
+   			"    #endif\r\n"
+   			"#endif\r\n"
+   			"varying vec2 uv;"
+   			"uniform sampler2D tex;"
+   			"void main()"
+   			"{"
+   			"    gl_FragColor = texture2D(tex, uv);"
+   			"}";
+
+   	const char* vSource_cube =
+   			"attribute vec3 vertexPosition;"
+			"attribute vec2 uvPosition;"
+			"uniform mat4 modelViewMatrix;"
+			"uniform mat4 perspectiveMatrix;"
+			"varying vec2 uv;"
+			"void main()"
+			"{"
+			"    gl_Position = perspectiveMatrix * modelViewMatrix * vec4(vertexPosition, 1.0);"
+			"    uv = uvPosition;"
+			"}";
+
+   	const char* fSource_cube =
+			"#ifdef GL_ES\r\n"
+			"    #ifdef GL_FRAGMENT_PRECISION_HIGH\r\n"
+			"        precision highp float;\r\n"
+			"    #else\r\n"
+			"        precision mediump float;\r\n"
+			"    #endif\r\n"
+			"#endif\r\n"
+			"varying vec2 uv;"
+			"uniform sampler2D tex;"
+			"void main()"
+			"{"
+			"    gl_FragColor = texture2D(tex, uv);"
+			"}";
+
+   	//From http://coding-experiments.blogspot.com/2010/06/edge-detection.html
+   	const char* fSource_cube_edge =
+			"#ifdef GL_ES\r\n"
+			"    #ifdef GL_FRAGMENT_PRECISION_HIGH\r\n"
+			"        precision highp float;\r\n"
+			"    #else\r\n"
+			"        precision mediump float;\r\n"
+			"    #endif\r\n"
+			"#endif\r\n"
+			"varying vec2 uv;"
+			"uniform sampler2D tex;"
+   			"uniform vec2 imageSize;"
+   			"float threshold(in float thr1, in float thr2 , in float val) {"
+			"    if (val < thr1) {return 0.0;}"
+			"    if (val > thr2) {return 1.0;}"
+			"    return val;"
+   			"}"
+   			"// averaged pixel intensity from 3 color channels\r\n"
+   			"float avg_intensity(in vec4 pix) {"
+   			"    return (pix.r + pix.g + pix.b)/3.;"
+   			"}"
+   			"vec4 get_pixel(in vec2 coords, in float dx, in float dy) {"
+   			"    return texture2D(tex,coords + vec2(dx, dy));"
+   			"}"
+   			"// returns pixel color\r\n"
+   			"float IsEdge(in vec2 coords){"
+			"    float dxtex = 1.0 / imageSize.x /*image width*/;"
+			"    float dytex = 1.0 / imageSize.y /*image height*/;"
+			"    float pix[9];"
+			"    int k = -1;"
+			"    float delta;"
+			"    // read neighboring pixel intensities\r\n"
+			"    for (int i=-1; i<2; i++) {"
+			"        for(int j=-1; j<2; j++) {"
+			"            k++;"
+			"            pix[k] = avg_intensity(get_pixel(coords,float(i)*dxtex,float(j)*dytex));"
+			"        }"
+			"    }"
+			"    // average color differences around neighboring pixels\r\n"
+			"    delta = (abs(pix[1]-pix[7])+"
+			"            abs(pix[5]-pix[3]) +"
+			"            abs(pix[0]-pix[8])+"
+			"            abs(pix[2]-pix[6])"
+			"            )/4.;"
+			"    return threshold(0.25,0.4,clamp(1.8*delta,0.0,1.0));"
+   			"}"
+			"void main()"
+			"{"
+   			"    vec4 color = vec4(0.0,0.0,0.0,1.0);"
+   			"    color.g = IsEdge(uv);"
+   			"    gl_FragColor = color;"
+			"}";
+
+    program_menu = loadShader(vSource_menu, fSource_menu);
+    if(program_menu == 0) {
+    	fprintf(stderr, "Initialize menu program\n");
+		return EXIT_FAILURE;
+    }
+
+    programs_cube[3] = loadShader(vSource_cube, fSource_cube);
+	if(programs_cube[3] == 0) {
+		fprintf(stderr, "Initialize cube program\n");
+		return EXIT_FAILURE;
+	}
+	programs_cube[0] = programs_cube[1] = programs_cube[3]; //For now, set every shader to the default shader
+
+	programs_cube[2] = loadShader(vSource_cube, fSource_cube_edge);
+	if(programs_cube[2] == 0) {
+		fprintf(stderr, "Initialize cube program (edge)\n");
+		return EXIT_FAILURE;
+	}
+
+    matrix_menu_projection = NULL;
+    matrix_menu_modelView = NULL;
+    matrix_cube_projection = NULL;
+    matrix_cube_modelView = NULL;
 
     menu_show_animation = true;
     return EXIT_SUCCESS;
 }
 
-void enable_2d() {
-    glViewport(0, 0, (int) width, (int) height);
-
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-
-    glOrthof(0.0f, width / height, 0.0f, 1.0f, -1.0f, 1.0f);
-
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
-    glScalef(1.0f / height, 1.0f / height, 1.0f);
+matrix4f createMatrix_menu_projection()
+{
+	return matrix_ortho(0.0f, width / height, 0.0f, 1.0f, -1.0f, 1.0f);
 }
 
-void enable_3d() {
-    glViewport(0, 0, (int) width, (int) height);
+matrix4f createMatrix_menu_modelView()
+{
+	return matrix_scale(1.0f / height, 1.0f / height, 1.0f);
+}
 
-    GLfloat aspect_ratio = width / height;
+matrix4f createMatrix_3d_projection()
+{
+	GLfloat aspect_ratio = width / height;
 
-    GLfloat fovy = 20.0f;
-    GLfloat zNear = 1.0f;
-    GLfloat zFar = 1000.0f;
+	GLfloat fovy = 20.0f;
+	GLfloat zNear = 1.0f;
+	GLfloat zFar = 1000.0f;
 
-    GLfloat top = tan(fovy * 0.0087266462599716478846184538424431f) * zNear;
-    GLfloat bottom = -top;
+	GLfloat top = tan(fovy * 0.0087266462599716478846184538424431f) * zNear;
+	GLfloat bottom = -top;
 
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-
-    glFrustumf(aspect_ratio * bottom, aspect_ratio * top, bottom, top, zNear,
-            zFar);
-
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
+	return matrix_frustum(aspect_ratio * bottom, aspect_ratio * top, bottom, top, zNear, zFar);
 }
 
 void update() {
@@ -614,9 +819,7 @@ unsigned long lower_power_of_two(unsigned long v)
     v++;
     if (!p2) v >>= 1;
     return v;
-
 }
-
 
 void render() {
     int i;
@@ -624,74 +827,106 @@ void render() {
     //Typical render pass
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    //First render background and menu if it is enabled
-    enable_2d();
+    //Setup matrices for menu
+    if(!matrix_menu_projection)
+	{
+		matrix_menu_projection = createMatrix_menu_projection();
+	}
+    if(!matrix_menu_modelView)
+	{
+		matrix_menu_modelView = createMatrix_menu_modelView();
+	}
 
-    glEnable(GL_TEXTURE_2D);
-    glEnableClientState(GL_VERTEX_ARRAY);
-    glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+    //First render background and menu if it is enabled
+    glUseProgram(program_menu);
+
+    GLint pAtt = glGetUniformLocation(program_menu, "perspectiveMatrix");
+	glUniformMatrix4fv(pAtt, 1, GL_FALSE, matrix_menu_projection);
+
+    GLint mvAtt = glGetUniformLocation(program_menu, "modelViewMatrix");
+	glUniformMatrix4fv(mvAtt, 1, GL_FALSE, matrix_menu_modelView);
+
+    GLint tAtt = glGetUniformLocation(program_menu, "tex");
+    glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, background);
+	glUniform1i(tAtt, 0);
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+    GLint vertAtt = glGetAttribLocation(program_menu, "vertexPosition");
+	glEnableVertexAttribArray(vertAtt);
+	GLint uvAtt = glGetAttribLocation(program_menu, "uvPosition");
+	glEnableVertexAttribArray(uvAtt);
 
-    glVertexPointer(2, GL_FLOAT, 0, background_vertices);
-    glTexCoordPointer(2, GL_FLOAT, 0, background_tex_coord);
-    glBindTexture(GL_TEXTURE_2D, background);
+	glVertexAttribPointer(vertAtt, 2, GL_FLOAT, GL_FALSE, 0, background_vertices);
+	glVertexAttribPointer(uvAtt, 2, GL_FLOAT, GL_FALSE, 0, background_tex_coord);
 
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
     if (menu_active || menu_show_animation || menu_hide_animation) {
-        glTranslatef(pos_x, pos_y, 0.0f);
+    	GLfloat x = pos_x, y = pos_y;
+        matrix4f menuMat = matrix_multiply_delete(matrix_menu_modelView, FALSE, matrix_translate(pos_x, pos_y, 0.0f), TRUE);
+        glUniformMatrix4fv(mvAtt, 1, GL_FALSE, menuMat);
 
         for (i = 0; i < 4; i++) {
             if (i == selected) {
-                glVertexPointer(2, GL_FLOAT, 0, radio_btn_selected_vertices);
-                glTexCoordPointer(2, GL_FLOAT, 0, radio_btn_selected_tex_coord);
-                glBindTexture(GL_TEXTURE_2D, radio_btn_selected);
+            	glVertexAttribPointer(vertAtt, 2, GL_FLOAT, GL_FALSE, 0, radio_btn_selected_vertices);
+				glVertexAttribPointer(uvAtt, 2, GL_FLOAT, GL_FALSE, 0, radio_btn_selected_tex_coord);
+				glBindTexture(GL_TEXTURE_2D, radio_btn_selected);
             } else {
-                glVertexPointer(2, GL_FLOAT, 0, radio_btn_unselected_vertices);
-                glTexCoordPointer(2, GL_FLOAT, 0,
-                        radio_btn_unselected_tex_coord);
-                glBindTexture(GL_TEXTURE_2D, radio_btn_unselected);
+            	glVertexAttribPointer(vertAtt, 2, GL_FLOAT, GL_FALSE, 0, radio_btn_unselected_vertices);
+				glVertexAttribPointer(uvAtt, 2, GL_FLOAT, GL_FALSE, 0, radio_btn_unselected_tex_coord);
+				glBindTexture(GL_TEXTURE_2D, radio_btn_unselected);
             }
 
-            glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
             glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-            glTranslatef(0.0f, 60.0f, 0.0f);
+            menuMat = matrix_multiply_delete(menuMat, TRUE, matrix_translate(0.0f, 60.0f, 0.0f), TRUE);
+            glUniformMatrix4fv(mvAtt, 1, GL_FALSE, menuMat);
         }
 
-        bbutil_render_text(font, "Color Menu", 10.0f, 10.0f, 0.35f, 0.35f, 0.35f, 1.0f);
-        bbutil_render_text(font, "Red", 70.0f, -40.0f, 0.35f, 0.35f, 0.35f, 1.0f);
-        bbutil_render_text(font, "Green", 70.0f, -100.0f, 0.35f, 0.35f, 0.35f, 1.0f);
-        bbutil_render_text(font, "Blue", 70.0f, -160.0f, 0.35f, 0.35f, 0.35f, 1.0f);
-        bbutil_render_text(font, "Yellow", 70.0f, -220.0f, 0.35f, 0.35f, 0.35f, 1.0f);
+        matrix_get_translation(menuMat, &x, &y, NULL);
+        x *= width;
+        y *= height;
+
+        bbutil_render_text(font, "Effect Menu",	10.0f + x, 10.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
+        bbutil_render_text(font, "No effect",	70.0f + x, -40.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
+        bbutil_render_text(font, "Edge detect",	70.0f + x, -100.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
+        bbutil_render_text(font, "??",			70.0f + x, -160.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
+        bbutil_render_text(font, "??",			70.0f + x, -220.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
+
+        matrix_free(menuMat);
     }
 
-    glDisableClientState(GL_VERTEX_ARRAY);
-    glDisableClientState(GL_TEXTURE_COORD_ARRAY);
-    glDisable(GL_TEXTURE_2D);
+    glDisableVertexAttribArray(uvAtt);
+    glDisableVertexAttribArray(vertAtt);
 
-    //Then render the cube
-    enable_3d();
-    glEnable(GL_LIGHTING);
-    glEnable(GL_LIGHT0);
-    glEnable(GL_COLOR_MATERIAL);
-    glEnable(GL_DEPTH_TEST);
-    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, 0);
 
-    glTranslatef(cube_pos_x, cube_pos_y, cube_pos_z);
+    //Setup the matrices for the cube
+    if(!matrix_cube_projection)
+	{
+		matrix_cube_projection = createMatrix_3d_projection();
+	}
+	if(!matrix_cube_modelView)
+	{
+		matrix_cube_modelView = matrix_translate(cube_pos_x, cube_pos_y, cube_pos_z);
+		matrix_cube_modelView = matrix_multiply_delete(matrix_cube_modelView, TRUE, matrix_rotate(30.0f, 1.0f, 0.0f, 0.0f), TRUE);
+		matrix_cube_modelView = matrix_multiply_delete(matrix_cube_modelView, TRUE, matrix_rotate(15.0f, 0.0f, 0.0f, 1.0f), TRUE);
+	}
 
-    glRotatef(30.0f, 1.0f, 0.0f, 0.0f);
-    glRotatef(15.0f, 0.0f, 0.0f, 1.0f);
-    glRotatef(angle, 0.0f, 1.0f, 0.0f);
+	matrix4f mvCube = matrix_multiply_delete(matrix_cube_modelView, FALSE, matrix_rotate(angle, 0.0f, 1.0f, 0.0f), TRUE);
 
-    //glColor4f(cube_color[0], cube_color[1], cube_color[2], cube_color[3]);
+	GLuint selectedCubeShader = programs_cube[selected];
+	glUseProgram(selectedCubeShader);
 
-    glEnableClientState(GL_VERTEX_ARRAY);
-    glEnableClientState(GL_NORMAL_ARRAY);
-    glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+	pAtt = glGetUniformLocation(selectedCubeShader, "perspectiveMatrix");
+	glUniformMatrix4fv(pAtt, 1, GL_FALSE, matrix_cube_projection);
+
+	mvAtt = glGetUniformLocation(selectedCubeShader, "modelViewMatrix");
+	glUniformMatrix4fv(mvAtt, 1, GL_FALSE, mvCube);
+
+	//TODO: Setup lighting
 
     // regenerate texture
     pthread_mutex_lock(&bufMutex);
@@ -706,37 +941,51 @@ void render() {
     int w = lower_power_of_two(cameraBuf->framedesc.rgb8888.width);
     int h = lower_power_of_two(cameraBuf->framedesc.rgb8888.height);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_BGRA, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, cameraBuf->framebuf);
+    GLint texSize = glGetUniformLocation(selectedCubeShader, "imageSize");
+	if(texSize >= 0)
+	{
+		GLfloat imgSize[] = {cameraBuf->framedesc.rgb8888.width, cameraBuf->framedesc.rgb8888.height};
+		glUniform2fv(texSize, 1, imgSize);
+	}
     //glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
     if (bufWaitingProducer) {
         pthread_cond_signal(&bufCond);
     }
     pthread_mutex_unlock(&bufMutex);
-
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); // set up settings
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR); // set up some more settings
 
+    vertAtt = glGetAttribLocation(selectedCubeShader, "vertexPosition");
+	glEnableVertexAttribArray(vertAtt);
+	//TODO: Setup normals
+	uvAtt = glGetAttribLocation(selectedCubeShader, "uvPosition");
+	glEnableVertexAttribArray(uvAtt);
 
-    glVertexPointer(3, GL_FLOAT, 0, cube_vertices);
-    glNormalPointer(GL_FLOAT, 0, cube_normals);
-    glTexCoordPointer(2, GL_FLOAT, 0, cube_tex_coords);
-    glBindTexture(GL_TEXTURE_2D, textureID);
+    glVertexAttribPointer(vertAtt, 3, GL_FLOAT, GL_FALSE, 0, cube_vertices);
+    //TODO: set normals (cube_normals)
+	glVertexAttribPointer(uvAtt, 2, GL_FLOAT, GL_FALSE, 0, cube_tex_coords);
+    tAtt = glGetUniformLocation(selectedCubeShader, "tex");
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, textureID);
+	glUniform1i(tAtt, 0);
 
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-    glDrawArrays(GL_TRIANGLE_STRIP, 4, 4);
-    glDrawArrays(GL_TRIANGLE_STRIP, 8, 4);
-    glDrawArrays(GL_TRIANGLE_STRIP, 12, 4);
-    glDrawArrays(GL_TRIANGLE_STRIP, 16, 4);
-    glDrawArrays(GL_TRIANGLE_STRIP, 20, 4);
+	//Then render the cube
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+	glDrawArrays(GL_TRIANGLE_STRIP, 4, 4);
+	glDrawArrays(GL_TRIANGLE_STRIP, 8, 4);
+	glDrawArrays(GL_TRIANGLE_STRIP, 12, 4);
+	glDrawArrays(GL_TRIANGLE_STRIP, 16, 4);
+	glDrawArrays(GL_TRIANGLE_STRIP, 20, 4);
 
-    glDisableClientState(GL_VERTEX_ARRAY);
-    glDisableClientState(GL_NORMAL_ARRAY);
-    glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+	glDisableVertexAttribArray(uvAtt);
+	//TODO: disable normals
+	glDisableVertexAttribArray(vertAtt);
 
-    glDisable(GL_LIGHTING);
-    glDisable(GL_LIGHT0);
-    glDisable(GL_COLOR_MATERIAL);
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+    matrix_free(mvCube);
+
+    glUseProgram(0);
 
     //Use utility code to update the screen
     bbutil_swap();
@@ -758,7 +1007,6 @@ void render() {
         }
         count = 0;
     }
-
 }
 
 int read_from_file() {
@@ -774,29 +1022,9 @@ int read_from_file() {
     if (rc == -1) {
         return false;
     } else {
-        if (selected == 0) {
-            cube_color[0] = 1.0f;
-            cube_color[1] = 1.0f;
-            cube_color[2] = 0.0f;
-            cube_color[3] = 1.0f;
-        } else if (selected == 1) {
-            cube_color[0] = 0.0f;
-            cube_color[1] = 0.0f;
-            cube_color[2] = 1.0f;
-            cube_color[3] = 1.0f;
-        } else if (selected == 2) {
-            cube_color[0] = 0.0f;
-            cube_color[1] = 1.0f;
-            cube_color[2] = 0.0f;
-            cube_color[3] = 1.0f;
-        } else if (selected == 3) {
-            cube_color[0] = 1.0f;
-            cube_color[1] = 0.0f;
-            cube_color[2] = 0.0f;
-            cube_color[3] = 1.0f;
-        } else {
-            return false;
-        }
+    	if (selected < 0 || selected > 3) {
+    		return false;
+    	}
     }
 
     if (menu_active) {
@@ -904,33 +1132,17 @@ int main(int argc, char *argv[]) {
 
     // get camera running
     if (camera_open(CAMERA_UNIT_FRONT, CAMERA_MODE_RW, &handle)) return 0;
-    fprintf(stderr, "open\n");
-
-
 
     if (camera_set_videovf_property(handle,
                                     CAMERA_IMGPROP_CREATEWINDOW, 0,
                                     CAMERA_IMGPROP_FORMAT, CAMERA_FRAMETYPE_RGB8888,
                                     CAMERA_IMGPROP_FRAMERATE, 30.0,
-#ifdef DA_B_CAMERA_RES
-                                    // note: output texture width needs to be a power of 2 apparently for this to work,
-                                    // despite my efforts to use glPixelStorei()
-                                    CAMERA_IMGPROP_ROTATION, 90,
-                                    CAMERA_IMGPROP_WIDTH, 576,
-									CAMERA_IMGPROP_HEIGHT, 1024)) return 0;
-#else
                                     // note: output texture width needs to be a power of 2 apparently for this to work,
                                     // despite my efforts to use glPixelStorei()
                                     CAMERA_IMGPROP_ROTATION, 90,
                                     CAMERA_IMGPROP_WIDTH, 576,
                                     CAMERA_IMGPROP_HEIGHT, 1024)) return 0;
-#endif
-    fprintf(stderr, "prop1\n");
     if (camera_start_video_viewfinder(handle, vf_callback, NULL, NULL)) return 0;
-    fprintf(stderr, "start\n");
-
-
-
 
     while (!shutdown) {
         // Handle user input and accelerometer
