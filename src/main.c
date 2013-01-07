@@ -948,6 +948,7 @@ void render() {
             return;
         }
     }
+    bool reuse = false;
     if (bufQueue) {
         if (cameraBuf) {
             camera_return_buffer(handle, cameraBuf);
@@ -958,6 +959,7 @@ void render() {
     } else {
         // no new frame has arrive.. re-use last
         fprintf(stderr, "reuse\n");
+        reuse = true;
     }
     pthread_mutex_unlock(&bufMutex);
 
@@ -966,7 +968,9 @@ void render() {
     glBindTexture(GL_TEXTURE_2D, textureID);
     int w = cameraBuf->framedesc.rgb8888.stride/4;
     int h = cameraBuf->framedesc.rgb8888.height;
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_BGRA, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, cameraBuf->framebuf);
+    if (!reuse) {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_BGRA, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, cameraBuf->framebuf);
+    }
 
     GLint texSize = glGetUniformLocation(selectedCubeShader, "imageSize");
 	if(texSize >= 0)
