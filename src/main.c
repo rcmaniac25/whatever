@@ -45,9 +45,6 @@
  * Replace "colors" with "shaders" so filter effects can be done
  */
 
-//un-define if compiling for DevAlpha B
-#define NEEDS_POWER_OF_TWO
-
 //OpenGL variables
 static GLfloat radio_btn_unselected_vertices[8], radio_btn_selected_vertices[8],
         background_portrait_vertices[8], background_landscape_vertices[8],
@@ -959,14 +956,13 @@ void render() {
 
     int w = cameraBuf->framedesc.rgb8888.stride/4;
     int h = cameraBuf->framedesc.rgb8888.height;
-    // for some reason, on dev-alpha-A, we still need the textures to be power-of-two???
-#ifdef NEEDS_POWER_OF_TWO
-    w = lower_power_of_two(w);
-    h = lower_power_of_two(h);
-#endif
     if (!reuse) {
         glTexImage2D(GL_TEXTURE_2D, 0, GL_BGRA, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, cameraBuf->framebuf);
     }
+
+    // TODO: I am told that we can use the eglImage extension to bypass the texture uploads, but we need a pixmap
+    // in order to do so.  It's presently probably not possible to remap the camera_buffer_t into a pixmap without
+    // some additional work from the graphics team.
 
     GLint texSize = glGetUniformLocation(selectedCubeShader, "imageSize");
 	if(texSize >= 0)
@@ -977,6 +973,8 @@ void render() {
 
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); // set up settings
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR); // set up some more settings
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); // set up some more settings
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE); // set up some more settings
 
     vertAtt = glGetAttribLocation(selectedCubeShader, "vertexPosition");
 	glEnableVertexAttribArray(vertAtt);
@@ -986,13 +984,11 @@ void render() {
 
     glVertexAttribPointer(vertAtt, 3, GL_FLOAT, GL_FALSE, 0, cube_vertices);
     //TODO: scale texture co-ordinates properly to deal with aspect ratio and stride
-#ifndef NEEDS_POWER_OF_TWO
     for(i=0; i<sizeof(cube_tex_coords)/sizeof(*cube_tex_coords); i++) {
         if (cube_tex_coords[i] != 0) {
             cube_tex_coords[i] = (float)cameraBuf->framedesc.rgb8888.width / (float)w;
         }
     }
-#endif
 
     //TODO: set normals (cube_normals)
 	glVertexAttribPointer(uvAtt, 2, GL_FLOAT, GL_FALSE, 0, cube_tex_coords);
@@ -1213,15 +1209,9 @@ int main(int argc, char *argv[]) {
                                     CAMERA_IMGPROP_FRAMERATE, 30.0,
                                     // note: native orientation gives best performance
                                     CAMERA_IMGPROP_ROTATION, orientation,
-#ifdef NEEDS_POWER_OF_TWO
-                                    CAMERA_IMGPROP_WIDTH, 288,
-                                    // height (which becomes width) is required to be a power of two on this GPU
-                                    CAMERA_IMGPROP_HEIGHT, 512
-#else
+                                    // note: can use camera_get_video_vf_resolutions() to find your favorite
                                     CAMERA_IMGPROP_WIDTH, 480,
-                                    CAMERA_IMGPROP_HEIGHT, 640
-#endif
-                                    )) return 0;
+                                    CAMERA_IMGPROP_HEIGHT, 640)) return 0;
     if (camera_start_video_viewfinder(handle, NULL, NULL, NULL)) return 0;
 
     // now we're going to do something new.  we're going to spawn a thread which will
