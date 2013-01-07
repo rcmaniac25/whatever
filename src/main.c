@@ -75,11 +75,17 @@ static GLuint textureID;
 
 static pthread_mutex_t bufMutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t bufCond = PTHREAD_COND_INITIALIZER;
-static bool bufWaitingProducer = false;
-static bool bufWaitingConsumer = false;
+static camera_buffer_t *bufQueue = NULL;
+static camera_buffer_t *cameraBuf = NULL;
 
 static camera_handle_t handle;
-static camera_buffer_t *cameraBuf = NULL;
+static pthread_t vf_tid;
+static int vf_chid;
+static int vf_coid;
+static struct sigevent vf_sigev;
+#define VF_PULSE_CODE  (123)
+static bool vf_stop = false;
+
 
 GLfloat light_ambient[] = { 0.5f, 0.5f, 0.5f, 1.0f };
 GLfloat light_diffuse[] = { 0.8f, 0.8f, 0.8f, 1.0f };
@@ -930,29 +936,46 @@ void render() {
 
     // regenerate texture
     pthread_mutex_lock(&bufMutex);
-    bufWaitingConsumer = true;
-    pthread_cond_wait(&bufCond, &bufMutex);
-    bufWaitingConsumer = false;
+    if (!bufQueue && !cameraBuf) {
+        uint64_t w1,w2;
+        ClockTime(CLOCK_MONOTONIC, NULL, &w1);
+        pthread_cond_wait(&bufCond, &bufMutex);
+        ClockTime(CLOCK_MONOTONIC, NULL, &w2);
+        fprintf(stderr, "waited %lld uS\n", (w2-w1)/1000);
+        if (!bufQueue && !cameraBuf) {
+            fprintf(stderr, "no buffers\n");
+            pthread_mutex_unlock(&bufMutex);
+            return;
+        }
+    }
+    if (bufQueue) {
+        if (cameraBuf) {
+            camera_return_buffer(handle, cameraBuf);
+            free(cameraBuf);
+        }
+        cameraBuf = bufQueue;
+        bufQueue = NULL;
+    } else {
+        // no new frame has arrive.. re-use last
+        fprintf(stderr, "reuse\n");
+    }
+    pthread_mutex_unlock(&bufMutex);
 
     static int z = 0;
     z++;
-    //glPixelStorei(GL_UNPACK_ROW_LENGTH, cameraBuf->framedesc.rgb8888.stride);
     glBindTexture(GL_TEXTURE_2D, textureID);
-    int w = lower_power_of_two(cameraBuf->framedesc.rgb8888.width);
-    int h = lower_power_of_two(cameraBuf->framedesc.rgb8888.height);
+    int w = cameraBuf->framedesc.rgb8888.stride/4;
+    int h = cameraBuf->framedesc.rgb8888.height;
     glTexImage2D(GL_TEXTURE_2D, 0, GL_BGRA, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, cameraBuf->framebuf);
+
     GLint texSize = glGetUniformLocation(selectedCubeShader, "imageSize");
 	if(texSize >= 0)
 	{
 		GLfloat imgSize[] = {cameraBuf->framedesc.rgb8888.width, cameraBuf->framedesc.rgb8888.height};
 		glUniform2fv(texSize, 1, imgSize);
 	}
-    //glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-    if (bufWaitingProducer) {
-        pthread_cond_signal(&bufCond);
-    }
-    pthread_mutex_unlock(&bufMutex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); // set up settings
+
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); // set up settings
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR); // set up some more settings
 
     vertAtt = glGetAttribLocation(selectedCubeShader, "vertexPosition");
@@ -962,6 +985,13 @@ void render() {
 	glEnableVertexAttribArray(uvAtt);
 
     glVertexAttribPointer(vertAtt, 3, GL_FLOAT, GL_FALSE, 0, cube_vertices);
+    //TODO: scale texture co-ordinates properly to deal with aspect ratio and stride
+    for(i=0; i<sizeof(cube_tex_coords)/sizeof(*cube_tex_coords); i++) {
+        if (cube_tex_coords[i] != 0) {
+            cube_tex_coords[i] = (float)cameraBuf->framedesc.rgb8888.width / (float)w;
+        }
+    }
+
     //TODO: set normals (cube_normals)
 	glVertexAttribPointer(uvAtt, 2, GL_FLOAT, GL_FALSE, 0, cube_tex_coords);
     tAtt = glGetUniformLocation(selectedCubeShader, "tex");
@@ -1048,39 +1078,80 @@ void save_to_file() {
     fclose(fp);
 }
 
-void vf_callback(camera_handle_t handle,
-                 camera_buffer_t *buf,
-                 void* arg)
+
+static void* vf_thread(void* arg)
 {
-    int y;
-    if (buf->frametype == CAMERA_FRAMETYPE_RGB8888) {
-        // signal the render thread to use the buffer
-        static uint64_t t1 = 0;
-        static uint64_t t2 = 0;
-        static unsigned short count = 0;
-        if (++count == 30) {
-            if (!t1) {
-                ClockTime(CLOCK_MONOTONIC, NULL, &t1);
-            } else {
-                ClockTime(CLOCK_MONOTONIC, NULL, &t2);
-                double fps = (t2-t1);
-                fps = fps / 1000000000;
-                fps = count / fps;
-                fprintf(stderr, "VF @ %f fps\n", fps);
-                t1 = t2;
-            }
-            count = 0;
-        }
-        pthread_mutex_lock(&bufMutex);
-        if (bufWaitingConsumer) {
-            cameraBuf = buf;
-            pthread_cond_signal(&bufCond);
-            bufWaitingProducer = true;
-            pthread_cond_wait(&bufCond, &bufMutex);
-            bufWaitingProducer = false;
-        }
-        pthread_mutex_unlock(&bufMutex);
+    int rcvid;
+    struct _pulse pulse;
+    camera_eventkey_t key;
+    camera_buffer_t inbuf;
+
+    // hook in to the viewfinder buffer stream in read-only mode.
+    // when a frame becomes available, the event will be delivered to us.
+    // NOTE: we should really be checking the CAMERA_FEATURE_PREVIEWISVIDEO feature
+    // to make sure we are connecting to the correct image stream, but since all
+    // devices that we currently build use the same frames for the viewfinder and
+    // for video recording, I am not bothering to do so for the sake of clarity.
+    // If the feature is reported as not available, then we would call camera_enable_video_event()
+    // instead.
+    if (camera_enable_viewfinder_event(handle,
+                                       CAMERA_EVENTMODE_READONLY,
+                                       &key,
+                                       &vf_sigev) != CAMERA_EOK) {
+        fprintf(stderr, "failed to attach viewfinder read/write event\n");
+        return NULL;
     }
+    // NOTE: this is NEW!
+    // if we are likely to be handling any camera buffer data, we must be sure
+    // to inform the camera service that we are using resources.
+    camera_register_resource(handle);
+    // now that we have registered our intent to use resources, we will be notified
+    // if the camera service is going to be unmapping our buffers if they are needed
+    // by a higher priority system process.  if we do not register in this way,
+    // the buffers can be unmapped AT ANY TIME, causing us to crash if we try to
+    // reference the buffer data.  We must be sure to de-register the resource when
+    // we are finished.  If the CAMERA_STATUS_RESOURCENOTAVAIL notification is
+    // received at any time, we must be sure to immediately release all buffers and
+    // call camera_deregister_resource().  There is a time limit on doing this, so do it fast!
+
+    while(!vf_stop) {
+        camera_buffer_t *release = NULL;
+        rcvid = MsgReceivePulse(vf_chid, &pulse, sizeof pulse, NULL);
+        if (rcvid != 0) continue;   // not a pulse
+        if (pulse.code != VF_PULSE_CODE) continue;  // not a pulse we can handle
+        if (vf_stop) break;     // stop if we're being told to stop
+
+        // okay, at this point, we can be sure the pulse code is meant to indicate that
+        // a new frame is available from the camera to process.
+        // retrieve the input buffer for processing
+        camera_get_viewfinder_buffers(handle,
+                                      key,
+                                      &inbuf,
+                                      NULL);
+        pthread_mutex_lock(&bufMutex);
+        // stale frame in queue.. overwrite
+        if (bufQueue) {
+            release = bufQueue;
+        }
+        bufQueue = calloc(1, inbuf.framesize);
+        memcpy(bufQueue, &inbuf, inbuf.framesize);
+        pthread_cond_signal(&bufCond);
+        pthread_mutex_unlock(&bufMutex);
+        if (release) {
+            fprintf(stderr,"releasing %p\n", release->framebuf);
+            camera_return_buffer(handle,
+                                 release);
+            free(release);
+        }
+    }
+
+    // de-register the viewfidner read/write event
+    camera_disable_event(handle, key);
+    // de-register our use of resources.  if the thread were being shut down due to the
+    // CAMERA_STATUS_RESOURCENOTAVAIL status being received, this call will also signal
+    // the camera service that it may proceed with revoking resources.
+    camera_deregister_resource(handle);
+    return NULL;
 }
 
 
@@ -1140,9 +1211,22 @@ int main(int argc, char *argv[]) {
                                     // note: output texture width needs to be a power of 2 apparently for this to work,
                                     // despite my efforts to use glPixelStorei()
                                     CAMERA_IMGPROP_ROTATION, 90,
-                                    CAMERA_IMGPROP_WIDTH, 576,
-                                    CAMERA_IMGPROP_HEIGHT, 1024)) return 0;
-    if (camera_start_video_viewfinder(handle, vf_callback, NULL, NULL)) return 0;
+                                    CAMERA_IMGPROP_WIDTH, 480,
+                                    CAMERA_IMGPROP_HEIGHT, 640)) return 0;
+    if (camera_start_video_viewfinder(handle, NULL, NULL, NULL)) return 0;
+
+    // now we're going to do something new.  we're going to spawn a thread which will
+    // implement our face-blurring filter.
+    // first though, let's set up the channel/connection/sigevent stuff we're going to
+    // be using to communicate with the camera and with the main thread (to tell it to stop)
+    vf_chid = ChannelCreate(0);
+    vf_coid = ConnectAttach(0, 0, vf_chid, _NTO_SIDE_CHANNEL, 0);
+    SIGEV_PULSE_INIT(&vf_sigev,
+                     vf_coid,
+                     SIGEV_PULSE_PRIO_INHERIT,
+                     VF_PULSE_CODE,
+                     0);
+    pthread_create(&vf_tid, NULL, vf_thread, NULL);
 
     while (!shutdown) {
         // Handle user input and accelerometer
@@ -1152,6 +1236,10 @@ int main(int argc, char *argv[]) {
         // Draw Scene
         render();
     }
+
+    vf_stop = true;
+    MsgSendPulse(vf_coid, -1, VF_PULSE_CODE, 0);
+    pthread_join(vf_tid, NULL);
 
     //Stop requesting events from libscreen
     screen_stop_events(screen_cxt);
