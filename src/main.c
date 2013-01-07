@@ -1203,14 +1203,14 @@ int main(int argc, char *argv[]) {
 
     // get camera running
     if (camera_open(CAMERA_UNIT_FRONT, CAMERA_MODE_RW, &handle)) return 0;
-
+    unsigned int orientation = 0;
+    camera_get_native_orientation(handle, &orientation);
     if (camera_set_videovf_property(handle,
                                     CAMERA_IMGPROP_CREATEWINDOW, 0,
                                     CAMERA_IMGPROP_FORMAT, CAMERA_FRAMETYPE_RGB8888,
                                     CAMERA_IMGPROP_FRAMERATE, 30.0,
-                                    // note: output texture width needs to be a power of 2 apparently for this to work,
-                                    // despite my efforts to use glPixelStorei()
-                                    CAMERA_IMGPROP_ROTATION, 90,
+                                    // note: native orientation gives best performance
+                                    CAMERA_IMGPROP_ROTATION, orientation,
                                     CAMERA_IMGPROP_WIDTH, 480,
                                     CAMERA_IMGPROP_HEIGHT, 640)) return 0;
     if (camera_start_video_viewfinder(handle, NULL, NULL, NULL)) return 0;
