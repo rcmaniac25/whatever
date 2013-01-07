@@ -45,8 +45,8 @@
  * Replace "colors" with "shaders" so filter effects can be done
  */
 
-//Uncomment if compiling for DevAlpha B
-//#define DA_B_CAMERA_RES
+//un-define if compiling for DevAlpha B
+#define NEEDS_POWER_OF_TWO
 
 //OpenGL variables
 static GLfloat radio_btn_unselected_vertices[8], radio_btn_selected_vertices[8],
@@ -77,7 +77,6 @@ static pthread_mutex_t bufMutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t bufCond = PTHREAD_COND_INITIALIZER;
 static camera_buffer_t *bufQueue = NULL;
 static camera_buffer_t *cameraBuf = NULL;
-static unsigned char *fixedBuf = NULL;
 
 static camera_handle_t handle;
 static pthread_t vf_tid;
@@ -967,11 +966,16 @@ void render() {
     static int z = 0;
     z++;
     glBindTexture(GL_TEXTURE_2D, textureID);
+
     int w = cameraBuf->framedesc.rgb8888.stride/4;
     int h = cameraBuf->framedesc.rgb8888.height;
+    // for some reason, on dev-alpha-A, we still need the textures to be power-of-two???
+#ifdef NEEDS_POWER_OF_TWO
+    w = lower_power_of_two(w);
+    h = lower_power_of_two(h);
+#endif
     if (!reuse) {
-//        glTexImage2D(GL_TEXTURE_2D, 0, GL_BGRA, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, cameraBuf->framebuf);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_BGRA, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, fixedBuf);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_BGRA, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, cameraBuf->framebuf);
     }
 
     GLint texSize = glGetUniformLocation(selectedCubeShader, "imageSize");
@@ -992,11 +996,13 @@ void render() {
 
     glVertexAttribPointer(vertAtt, 3, GL_FLOAT, GL_FALSE, 0, cube_vertices);
     //TODO: scale texture co-ordinates properly to deal with aspect ratio and stride
+#ifndef NEEDS_POWER_OF_TWO
     for(i=0; i<sizeof(cube_tex_coords)/sizeof(*cube_tex_coords); i++) {
         if (cube_tex_coords[i] != 0) {
             cube_tex_coords[i] = (float)cameraBuf->framedesc.rgb8888.width / (float)w;
         }
     }
+#endif
 
     //TODO: set normals (cube_normals)
 	glVertexAttribPointer(uvAtt, 2, GL_FLOAT, GL_FALSE, 0, cube_tex_coords);
@@ -1217,8 +1223,15 @@ int main(int argc, char *argv[]) {
                                     CAMERA_IMGPROP_FRAMERATE, 30.0,
                                     // note: native orientation gives best performance
                                     CAMERA_IMGPROP_ROTATION, orientation,
+#ifdef NEEDS_POWER_OF_TWO
+                                    CAMERA_IMGPROP_WIDTH, 288,
+                                    // height (which becomes width) is required to be a power of two on this GPU
+                                    CAMERA_IMGPROP_HEIGHT, 512
+#else
                                     CAMERA_IMGPROP_WIDTH, 480,
-                                    CAMERA_IMGPROP_HEIGHT, 640)) return 0;
+                                    CAMERA_IMGPROP_HEIGHT, 640
+#endif
+                                    )) return 0;
     if (camera_start_video_viewfinder(handle, NULL, NULL, NULL)) return 0;
 
     // now we're going to do something new.  we're going to spawn a thread which will
@@ -1233,17 +1246,6 @@ int main(int argc, char *argv[]) {
                      VF_PULSE_CODE,
                      0);
     pthread_create(&vf_tid, NULL, vf_thread, NULL);
-
-    fixedBuf = calloc(1, 4096*480);
-    int x,y;
-    for (y=0; y<480; y++) {
-        for (x=0; x<640; x++) {
-            fixedBuf[y*4096+x*4] = 0x00;
-            fixedBuf[y*4096+x*4+1] = 0x00;
-            fixedBuf[y*4096+x*4+2] = 0xff;
-            fixedBuf[y*4096+x*4+3] = 0xff;
-        }
-    }
 
     while (!shutdown) {
         // Handle user input and accelerometer
