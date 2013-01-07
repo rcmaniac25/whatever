@@ -77,6 +77,7 @@ static pthread_mutex_t bufMutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t bufCond = PTHREAD_COND_INITIALIZER;
 static camera_buffer_t *bufQueue = NULL;
 static camera_buffer_t *cameraBuf = NULL;
+static unsigned char *fixedBuf = NULL;
 
 static camera_handle_t handle;
 static pthread_t vf_tid;
@@ -969,7 +970,8 @@ void render() {
     int w = cameraBuf->framedesc.rgb8888.stride/4;
     int h = cameraBuf->framedesc.rgb8888.height;
     if (!reuse) {
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_BGRA, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, cameraBuf->framebuf);
+//        glTexImage2D(GL_TEXTURE_2D, 0, GL_BGRA, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, cameraBuf->framebuf);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_BGRA, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, fixedBuf);
     }
 
     GLint texSize = glGetUniformLocation(selectedCubeShader, "imageSize");
@@ -1231,6 +1233,17 @@ int main(int argc, char *argv[]) {
                      VF_PULSE_CODE,
                      0);
     pthread_create(&vf_tid, NULL, vf_thread, NULL);
+
+    fixedBuf = calloc(1, 4096*480);
+    int x,y;
+    for (y=0; y<480; y++) {
+        for (x=0; x<640; x++) {
+            fixedBuf[y*4096+x*4] = 0x00;
+            fixedBuf[y*4096+x*4+1] = 0x00;
+            fixedBuf[y*4096+x*4+2] = 0xff;
+            fixedBuf[y*4096+x*4+3] = 0xff;
+        }
+    }
 
     while (!shutdown) {
         // Handle user input and accelerometer
