@@ -366,3 +366,8 @@ matrix4f matrix_multiply(const matrix4f m1, const matrix4f m2)
 {
 	return matrix_multiply_delete(m1, FALSE, m2, FALSE);
 }
+
+matrix4f matrix_multiply_disposable(const matrix4f mat, const matrix4f disposable)
+{
+	return matrix_multiply_delete(mat, FALSE, disposable, TRUE);
+}

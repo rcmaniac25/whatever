@@ -94,53 +94,67 @@ GLfloat light_direction[] = { 0.0f, 0.0f, -30.0f, 1.0f };
 
 static float cube_vertices[] = {
         // FRONT
-        -2.0f, -2.0f, 2.0f, 2.0f, -2.0f, 2.0f, -2.0f,
-        2.0f,
-        2.0f,
-        2.0f,
-        2.0f,
-        2.0f,
+        -2.0f, -2.0f, 2.0f,
+        2.0f, -2.0f, 2.0f,
+        -2.0f, 2.0f, 2.0f,
+        2.0f, 2.0f, 2.0f,
         // BACK
-        -2.0f, -2.0f, -2.0f, -2.0f, 2.0f, -2.0f, 2.0f, -2.0f,
-        -2.0f,
-        2.0f,
-        2.0f,
-        -2.0f,
+        -2.0f, -2.0f, -2.0f,
+        -2.0f, 2.0f, -2.0f,
+        2.0f, -2.0f, -2.0f,
+        2.0f, 2.0f, -2.0f,
         // LEFT
-        -2.0f, -2.0f, 2.0f, -2.0f, 2.0f, 2.0f, -2.0f, -2.0f, -2.0f,
-        -2.0f,
-        2.0f,
-        -2.0f,
+        -2.0f, -2.0f, 2.0f,
+        -2.0f, 2.0f, 2.0f,
+        -2.0f, -2.0f, -2.0f,
+        -2.0f, 2.0f, -2.0f,
         // RIGHT
-        2.0f, -2.0f, -2.0f, 2.0f, 2.0f, -2.0f, 2.0f, -2.0f, 2.0f, 2.0f,
-        2.0f,
-        2.0f,
+        2.0f, -2.0f, -2.0f,
+        2.0f, 2.0f, -2.0f,
+        2.0f, -2.0f, 2.0f,
+        2.0f, 2.0f, 2.0f,
         // TOP
-        -2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, -2.0f, 2.0f, -2.0f, 2.0f, 2.0f,
-        -2.0f,
+        -2.0f, 2.0f, 2.0f,
+        2.0f, 2.0f, 2.0f,
+        -2.0f, 2.0f, -2.0f,
+        2.0f, 2.0f, -2.0f,
         // BOTTOM
-        -2.0f, -2.0f, 2.0f, -2.0f, -2.0f, -2.0f, 2.0f, -2.0f, 2.0f, 2.0f, -2.0f,
-        -2.0f, };
+        -2.0f, -2.0f, 2.0f,
+        -2.0f, -2.0f, -2.0f,
+        2.0f, -2.0f, 2.0f,
+        2.0f, -2.0f, -2.0f };
 
 float cube_normals[] = {
         // FRONT
-        0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f,
-        0.0f,
-        1.0f,
+        0.0f, 0.0f, 1.0f,
+        0.0f, 0.0f, 1.0f,
+        0.0f, 0.0f, 1.0f,
+        0.0f, 0.0f, 1.0f,
         // BACK
-        0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f,
-        0.0f,
-        -1.0f,
+        0.0f, 0.0f, -1.0f,
+        0.0f, 0.0f, -1.0f,
+        0.0f, 0.0f, -1.0f,
+        0.0f, 0.0f, -1.0f,
         // LEFT
-        -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f,
-        0.0f,
+        -1.0f, 0.0f, 0.0f,
+        -1.0f, 0.0f, 0.0f,
+        -1.0f, 0.0f, 0.0f,
+        -1.0f, 0.0f, 0.0f,
         // RIGHT
-        1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+        1.0f, 0.0f, 0.0f,
+        1.0f, 0.0f, 0.0f,
+        1.0f, 0.0f, 0.0f,
+        1.0f, 0.0f, 0.0f,
         // TOP
-        0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f,
+        0.0f, 1.0f, 0.0f,
+        0.0f, 1.0f, 0.0f,
+        0.0f, 1.0f, 0.0f,
+        0.0f, 1.0f, 0.0f,
         // BOTTOM
-        0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f,
-        0.0f };
+        0.0f, -1.0f, 0.0f,
+        0.0f, -1.0f, 0.0f,
+        0.0f, -1.0f, 0.0f,
+        0.0f, -1.0f, 0.0f };
 
 // note: since the textures are being cropped it may make sense to scale these values appropriately
 float cube_tex_coords[] = {
@@ -898,7 +912,7 @@ void render() {
         bbutil_render_text(font, "Effect Menu",	10.0f + x, 10.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
         bbutil_render_text(font, "No effect",	70.0f + x, -40.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
         bbutil_render_text(font, "Edge detect",	70.0f + x, -100.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
-        bbutil_render_text(font, "??",			70.0f + x, -160.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
+        bbutil_render_text(font, "Greyscale",	70.0f + x, -160.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
         bbutil_render_text(font, "??",			70.0f + x, -220.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
 
         matrix_free(menuMat);
@@ -963,18 +977,23 @@ void render() {
     }
     pthread_mutex_unlock(&bufMutex);
 
-    static int z = 0;
-    z++;
     glBindTexture(GL_TEXTURE_2D, textureID);
     int w = cameraBuf->framedesc.rgb8888.stride/4;
     int h = cameraBuf->framedesc.rgb8888.height;
     if (!reuse) {
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_BGRA, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, cameraBuf->framebuf);
+		static int textureInit = 0;
+		if(textureInit == 0) {
+			//Setup the texture
+			textureInit = 1;
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, cameraBuf->framebuf);
+		} else {
+			//Does the same as glTexImage2D, but doesn't allocate the space for the image (that's what the first call is for)
+			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_BGRA, GL_UNSIGNED_BYTE, cameraBuf->framebuf);
+		}
     }
 
     GLint texSize = glGetUniformLocation(selectedCubeShader, "imageSize");
-	if(texSize >= 0)
-	{
+	if(texSize >= 0) {
 		GLfloat imgSize[] = {cameraBuf->framedesc.rgb8888.width, cameraBuf->framedesc.rgb8888.height};
 		glUniform2fv(texSize, 1, imgSize);
 	}
@@ -1215,8 +1234,8 @@ int main(int argc, char *argv[]) {
                                     CAMERA_IMGPROP_FRAMERATE, 30.0,
                                     // note: native orientation gives best performance
                                     CAMERA_IMGPROP_ROTATION, orientation,
-                                    CAMERA_IMGPROP_WIDTH, 480,
-                                    CAMERA_IMGPROP_HEIGHT, 640)) return 0;
+                                    CAMERA_IMGPROP_WIDTH, 720,
+                                    CAMERA_IMGPROP_HEIGHT, 1280)) return 0;
     if (camera_start_video_viewfinder(handle, NULL, NULL, NULL)) return 0;
 
     // now we're going to do something new.  we're going to spawn a thread which will

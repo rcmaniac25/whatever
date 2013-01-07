@@ -57,7 +57,11 @@ void matrix_scale_set(GLfloat x, GLfloat y, GLfloat z, matrix4f matrix);
 void matrix_translate_set(GLfloat x, GLfloat y, GLfloat z, matrix4f matrix);
 void matrix_rotate_set(GLfloat angle, GLfloat x, GLfloat y, GLfloat z, matrix4f matrix);
 
+//TODO: Matrix invert
+//TODO: Matrix determinant
+
 matrix4f matrix_multiply_delete(const matrix4f m1, BOOL freeM1, const matrix4f m2, BOOL freeM2);
 matrix4f matrix_multiply(const matrix4f m1, const matrix4f m2);
+matrix4f matrix_multiply_disposable(const matrix4f mat, const matrix4f disposable);
 
 #endif
