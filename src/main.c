@@ -39,11 +39,13 @@
 
 /* TODO:
  * Cleanup code
- * Change cube shader to use a spotlight (and add normals)
- * Speed up rendering (probably slow from the mutex)
+ * Rotate UVs based on Camera
+ * Change plain cube shader to use a spotlight (and add normals)
  * Rotate camera when device rotates
- * Replace "colors" with "shaders" so filter effects can be done
  */
+
+//Uncomment this when debugging is desired
+#define DEBUG_INFO_PRINTOUT
 
 //OpenGL variables
 static GLfloat radio_btn_unselected_vertices[8], radio_btn_selected_vertices[8],
@@ -748,6 +750,54 @@ int initialize() {
    			"    gl_FragColor = color;"
 			"}";
 
+   	const char* fSource_cube_grey =
+			"#ifdef GL_ES\r\n"
+			"    #ifdef GL_FRAGMENT_PRECISION_HIGH\r\n"
+			"        precision highp float;\r\n"
+			"    #else\r\n"
+			"        precision mediump float;\r\n"
+			"    #endif\r\n"
+			"#endif\r\n"
+			"varying vec2 uv;"
+			"uniform sampler2D tex;"
+			"void main()"
+			"{"
+   			"    vec4 color = texture2D(tex, uv);"
+   			"    float avg = (color.r + color.g + color.b) / 3.0;"
+			"    gl_FragColor = vec4(avg, avg, avg, 1.0);"
+			"}";
+
+   	//From GPUImageSwirlFilter from https://github.com/BradLarson/GPUImage
+   	const char* fSource_cube_swirl =
+			"#ifdef GL_ES\r\n"
+			"    #ifdef GL_FRAGMENT_PRECISION_HIGH\r\n"
+			"        precision highp float;\r\n"
+			"    #else\r\n"
+			"        precision mediump float;\r\n"
+			"    #endif\r\n"
+			"#endif\r\n"
+			"varying vec2 uv;"
+			"uniform sampler2D tex;"
+   			"const vec2 center = vec2(0.5, 0.5);"
+   			"const float radius = 0.5;"
+   			"const float angle = 1.0;"
+			"void main()"
+			"{"
+			"    vec2 textureCoordinateToUse = uv;"
+			"    float dist = distance(center, uv);"
+   			"    textureCoordinateToUse -= center;"
+   			"    if (dist < radius)"
+   			"    {"
+   			"        float percent = (radius - dist) / radius;"
+   			"        float theta = percent * percent * angle * 8.0;"
+   			"        float s = sin(theta);"
+   			"        float c = cos(theta);"
+   			"        textureCoordinateToUse = vec2(dot(textureCoordinateToUse, vec2(c, -s)), dot(textureCoordinateToUse, vec2(s, c)));"
+   			"    }"
+   			"    textureCoordinateToUse += center;"
+   			"    gl_FragColor = texture2D(tex, textureCoordinateToUse);"
+			"}";
+
     program_menu = loadShader(vSource_menu, fSource_menu);
     if(program_menu == 0) {
     	fprintf(stderr, "Initialize menu program\n");
@@ -759,11 +809,22 @@ int initialize() {
 		fprintf(stderr, "Initialize cube program\n");
 		return EXIT_FAILURE;
 	}
-	programs_cube[0] = programs_cube[1] = programs_cube[3]; //For now, set every shader to the default shader
 
 	programs_cube[2] = loadShader(vSource_cube, fSource_cube_edge);
 	if(programs_cube[2] == 0) {
 		fprintf(stderr, "Initialize cube program (edge)\n");
+		return EXIT_FAILURE;
+	}
+
+	programs_cube[1] = loadShader(vSource_cube, fSource_cube_grey);
+	if(programs_cube[1] == 0) {
+		fprintf(stderr, "Initialize cube program (greyscale)\n");
+		return EXIT_FAILURE;
+	}
+
+	programs_cube[0] = loadShader(vSource_cube, fSource_cube_swirl);
+	if(programs_cube[0] == 0) {
+		fprintf(stderr, "Initialize cube program (swirl)\n");
 		return EXIT_FAILURE;
 	}
 
@@ -910,7 +971,7 @@ void render() {
         bbutil_render_text(font, "No effect",	70.0f + x, -40.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
         bbutil_render_text(font, "Edge detect",	70.0f + x, -100.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
         bbutil_render_text(font, "Greyscale",	70.0f + x, -160.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
-        bbutil_render_text(font, "??",			70.0f + x, -220.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
+        bbutil_render_text(font, "Swirl",		70.0f + x, -220.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
 
         matrix_free(menuMat);
     }
@@ -952,9 +1013,13 @@ void render() {
         ClockTime(CLOCK_MONOTONIC, NULL, &w1);
         pthread_cond_wait(&bufCond, &bufMutex);
         ClockTime(CLOCK_MONOTONIC, NULL, &w2);
+#ifdef DEBUG_INFO_PRINTOUT
         fprintf(stderr, "waited %lld uS\n", (w2-w1)/1000);
+#endif
         if (!bufQueue && !cameraBuf) {
+#ifdef DEBUG_INFO_PRINTOUT
             fprintf(stderr, "no buffers\n");
+#endif
             pthread_mutex_unlock(&bufMutex);
             return;
         }
@@ -969,7 +1034,9 @@ void render() {
         bufQueue = NULL;
     } else {
         // no new frame has arrive.. re-use last
+#ifdef DEBUG_INFO_PRINTOUT
         fprintf(stderr, "reuse\n");
+#endif
         reuse = true;
     }
     pthread_mutex_unlock(&bufMutex);
@@ -1059,7 +1126,9 @@ void render() {
             double fps = (t2-t1);
             fps = fps / 1000000000;
             fps = count / fps;
+#ifdef DEBUG_INFO_PRINTOUT
             fprintf(stderr, "RENDER @ %f fps\n", fps);
+#endif
             t1 = t2;
         }
         count = 0;
@@ -1165,7 +1234,9 @@ static void* vf_thread(void* arg)
         pthread_cond_signal(&bufCond);
         pthread_mutex_unlock(&bufMutex);
         if (release) {
+#ifdef DEBUG_INFO_PRINTOUT
             fprintf(stderr,"releasing %p\n", release->framebuf);
+#endif
             camera_return_buffer(handle,
                                  release);
             free(release);
@@ -1180,7 +1251,6 @@ static void* vf_thread(void* arg)
     camera_deregister_resource(handle);
     return NULL;
 }
-
 
 int main(int argc, char *argv[]) {
     //Create a screen context that will be used to create an EGL surface to to receive libscreen events
@@ -1232,6 +1302,7 @@ int main(int argc, char *argv[]) {
     if (camera_open(CAMERA_UNIT_FRONT, CAMERA_MODE_RW, &handle)) return 0;
     unsigned int orientation = 0;
     camera_get_native_orientation(handle, &orientation);
+    //TODO rotate UVs
     if (camera_set_videovf_property(handle,
                                     CAMERA_IMGPROP_CREATEWINDOW, 0,
                                     CAMERA_IMGPROP_FORMAT, CAMERA_FRAMETYPE_RGB8888,
