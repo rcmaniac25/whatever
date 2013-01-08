@@ -764,7 +764,7 @@ int initialize() {
 			"{"
    			"    vec4 color = texture2D(tex, uv);"
    			"    float avg = (color.r + color.g + color.b) / 3.0;"
-			"    gl_FragColor = vec4(avg, avg, avg, 1.0);"
+			"    gl_FragColor = vec4(vec3(avg), 1.0);"
 			"}";
 
    	//From GPUImageSwirlFilter from https://github.com/BradLarson/GPUImage
