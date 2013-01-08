@@ -45,9 +45,6 @@
  * Replace "colors" with "shaders" so filter effects can be done
  */
 
-//Uncomment if compiling for DevAlpha B
-//#define DA_B_CAMERA_RES
-
 //OpenGL variables
 static GLfloat radio_btn_unselected_vertices[8], radio_btn_selected_vertices[8],
         background_portrait_vertices[8], background_landscape_vertices[8],
@@ -978,6 +975,7 @@ void render() {
     pthread_mutex_unlock(&bufMutex);
 
     glBindTexture(GL_TEXTURE_2D, textureID);
+
     int w = cameraBuf->framedesc.rgb8888.stride/4;
     int h = cameraBuf->framedesc.rgb8888.height;
     if (!reuse) {
@@ -985,12 +983,16 @@ void render() {
 		if(textureInit == 0) {
 			//Setup the texture
 			textureInit = 1;
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, cameraBuf->framebuf);
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_BGRA, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, cameraBuf->framebuf);
 		} else {
 			//Does the same as glTexImage2D, but doesn't allocate the space for the image (that's what the first call is for)
 			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_BGRA, GL_UNSIGNED_BYTE, cameraBuf->framebuf);
 		}
     }
+
+    // TODO: I am told that we can use the eglImage extension to bypass the texture uploads, but we need a pixmap
+    // in order to do so.  It's presently probably not possible to remap the camera_buffer_t into a pixmap without
+    // some additional work from the graphics team.
 
     GLint texSize = glGetUniformLocation(selectedCubeShader, "imageSize");
 	if(texSize >= 0) {
@@ -1000,6 +1002,8 @@ void render() {
 
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); // set up settings
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR); // set up some more settings
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); // set up some more settings
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE); // set up some more settings
 
     vertAtt = glGetAttribLocation(selectedCubeShader, "vertexPosition");
 	glEnableVertexAttribArray(vertAtt);
@@ -1234,8 +1238,9 @@ int main(int argc, char *argv[]) {
                                     CAMERA_IMGPROP_FRAMERATE, 30.0,
                                     // note: native orientation gives best performance
                                     CAMERA_IMGPROP_ROTATION, orientation,
-                                    CAMERA_IMGPROP_WIDTH, 720,
-                                    CAMERA_IMGPROP_HEIGHT, 1280)) return 0;
+                                    // note: can use camera_get_video_vf_resolutions() to find your favorite
+                                    CAMERA_IMGPROP_WIDTH, 480,
+                                    CAMERA_IMGPROP_HEIGHT, 640)) return 0;
     if (camera_start_video_viewfinder(handle, NULL, NULL, NULL)) return 0;
 
     // now we're going to do something new.  we're going to spawn a thread which will
