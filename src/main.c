@@ -38,14 +38,18 @@
 #include "matrix.h"
 
 /* TODO:
- * Cleanup code
- * Rotate UVs based on Camera
  * Change plain cube shader to use a spotlight (and add normals)
+ * Cleanup code
+ * Flip UVs depending on if rear or front camera is being used
  * Rotate camera when device rotates
+ * Figure out why FPS is inconsistent (one moment it's 40-50 FPS, the next it's 20). It's not like the filter is being changed.
  */
 
 //Uncomment this when debugging is desired
 #define DEBUG_INFO_PRINTOUT
+
+//Uncomment this to have a FPS count printed to console
+#define DEBUG_FPS
 
 //OpenGL variables
 static GLfloat radio_btn_unselected_vertices[8], radio_btn_selected_vertices[8],
@@ -157,12 +161,13 @@ float cube_normals[] = {
 
 // note: since the textures are being cropped it may make sense to scale these values appropriately
 float cube_tex_coords[] = {
-		0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f,	1.0f, 0.0f, //Front
-		0.0f, 0.0f, 1.0f, 0.0f,	0.0f, 1.0f, 1.0f, 1.0f, //Back
-		0.0f, 0.0f, 1.0f, 0.0f,	0.0f, 1.0f, 1.0f, 1.0f, //Left
-		0.0f, 0.0f, 1.0f, 0.0f,	0.0f, 1.0f, 1.0f, 1.0f, //Right
-		0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f,	//Top
-		1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f};//Bottom
+		1.0f, 1.0f,	0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, //Front
+		0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f,	//Back
+		0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f,	//Left
+		0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f,	//Right
+		1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f,	0.0f, 0.0f, //Top
+		1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f};//Bottom
+#define CUBE_TEX_COORDS_QUAD_COUNT (((sizeof(cube_tex_coords) / sizeof(*cube_tex_coords)) / 2) / 4)
 
 int resize();
 void update();
@@ -239,6 +244,7 @@ static void handleNavigatorEvent(bps_event_t *event) {
         navigator_orientation_check_response(event, true);
         break;
     case NAVIGATOR_ORIENTATION:
+    	//XXX Rotate camera
         if (EXIT_FAILURE == resize(event)) {
             shutdown = true;
         }
@@ -632,14 +638,7 @@ int initialize() {
     glBindTexture(GL_TEXTURE_2D, textureID);
 
     //Common gl setup
-    //TODO: XXX
-    //glShadeModel(GL_SMOOTH);
     glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
-
-    //glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient);
-    //glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse);
-    //glLightfv(GL_LIGHT0, GL_POSITION, light_pos);
-    //glLightfv(GL_LIGHT0, GL_SPOT_DIRECTION, light_direction);
 
     glEnable(GL_CULL_FACE);
 
@@ -1004,7 +1003,27 @@ void render() {
 	mvAtt = glGetUniformLocation(selectedCubeShader, "modelViewMatrix");
 	glUniformMatrix4fv(mvAtt, 1, GL_FALSE, mvCube);
 
-	//TODO: Setup lighting
+	//Setup lighting
+	GLint lightAtt = glGetUniformLocation(selectedCubeShader, "lightAmbient");
+	if(lightAtt >= 0)
+	{
+		glUniform4fv(lightAtt, 1, light_ambient); //XXX GL_AMBIENT
+	}
+	lightAtt = glGetUniformLocation(selectedCubeShader, "lightDiffuse");
+	if(lightAtt >= 0)
+	{
+		glUniform4fv(lightAtt, 1, light_diffuse); //XXX GL_DIFFUSE
+	}
+	lightAtt = glGetUniformLocation(selectedCubeShader, "lightPosition");
+	if(lightAtt >= 0)
+	{
+		glUniform4fv(lightAtt, 1, light_pos); //XXX GL_POSITION
+	}
+	lightAtt = glGetUniformLocation(selectedCubeShader, "lightSpotDirection");
+	if(lightAtt >= 0)
+	{
+		glUniform4fv(lightAtt, 1, light_direction); //XXX GL_SPOT_DIRECTION
+	}
 
     // regenerate texture
     pthread_mutex_lock(&bufMutex);
@@ -1074,19 +1093,27 @@ void render() {
 
     vertAtt = glGetAttribLocation(selectedCubeShader, "vertexPosition");
 	glEnableVertexAttribArray(vertAtt);
-	//TODO: Setup normals
+	GLint normAtt = glGetAttribLocation(selectedCubeShader, "vertexNormal");
+	if(normAtt >= 0)
+	{
+		glEnableVertexAttribArray(normAtt);
+	}
 	uvAtt = glGetAttribLocation(selectedCubeShader, "uvPosition");
 	glEnableVertexAttribArray(uvAtt);
 
     glVertexAttribPointer(vertAtt, 3, GL_FLOAT, GL_FALSE, 0, cube_vertices);
-    //TODO: scale texture co-ordinates properly to deal with aspect ratio and stride
+
+    //scale texture co-ordinates properly to deal with aspect ratio and stride
     for(i=0; i<sizeof(cube_tex_coords)/sizeof(*cube_tex_coords); i++) {
         if (cube_tex_coords[i] != 0) {
             cube_tex_coords[i] = (float)cameraBuf->framedesc.rgb8888.width / (float)w;
         }
     }
 
-    //TODO: set normals (cube_normals)
+    if(normAtt >= 0)
+    {
+    	glVertexAttribPointer(normAtt, 3, GL_FLOAT, GL_FALSE, 0, cube_normals);
+    }
 	glVertexAttribPointer(uvAtt, 2, GL_FLOAT, GL_FALSE, 0, cube_tex_coords);
     tAtt = glGetUniformLocation(selectedCubeShader, "tex");
 	glActiveTexture(GL_TEXTURE0);
@@ -1102,7 +1129,10 @@ void render() {
 	glDrawArrays(GL_TRIANGLE_STRIP, 20, 4);
 
 	glDisableVertexAttribArray(uvAtt);
-	//TODO: disable normals
+	if(normAtt >= 0)
+	{
+		glDisableVertexAttribArray(normAtt);
+	}
 	glDisableVertexAttribArray(vertAtt);
 
 	glBindTexture(GL_TEXTURE_2D, 0);
@@ -1126,7 +1156,7 @@ void render() {
             double fps = (t2-t1);
             fps = fps / 1000000000;
             fps = count / fps;
-#ifdef DEBUG_INFO_PRINTOUT
+#if defined(DEBUG_INFO_PRINTOUT) || defined(DEBUG_FPS)
             fprintf(stderr, "RENDER @ %f fps\n", fps);
 #endif
             t1 = t2;
@@ -1243,13 +1273,100 @@ static void* vf_thread(void* arg)
         }
     }
 
-    // de-register the viewfidner read/write event
+    // de-register the viewfinder read/write event
     camera_disable_event(handle, key);
     // de-register our use of resources.  if the thread were being shut down due to the
     // CAMERA_STATUS_RESOURCENOTAVAIL status being received, this call will also signal
     // the camera service that it may proceed with revoking resources.
     camera_deregister_resource(handle);
     return NULL;
+}
+
+void rotateUVs(float* uvs, int quads, int angle)
+{
+	angle %= 360;
+	if(angle < 0)
+	{
+		angle += 360;
+	}
+	int q;
+	int a;
+	for(q = 0; q < quads; q++)
+	{
+		for(a = 0; a < angle; a += 90)
+		{
+			//x.0123 -- start
+
+			//0.1123
+			float x = uvs[q * 8 + 0];
+			float y = uvs[q * 8 + 1];
+			uvs[q * 8 + 0] = uvs[q * 8 + 2];
+			uvs[q * 8 + 1] = uvs[q * 8 + 3];
+
+			//0.1223
+			uvs[q * 8 + 2] = uvs[q * 8 + 4];
+			uvs[q * 8 + 3] = uvs[q * 8 + 5];
+
+			//0.1203
+			uvs[q * 8 + 4] = x;
+			uvs[q * 8 + 5] = y;
+
+			//3.1203
+			x = uvs[q * 8 + 6];
+			y = uvs[q * 8 + 7];
+
+			//3.1202
+			uvs[q * 8 + 6] = uvs[q * 8 + 2];
+			uvs[q * 8 + 7] = uvs[q * 8 + 3];
+
+			//3.1302
+			uvs[q * 8 + 2] = x;
+			uvs[q * 8 + 3] = y;
+		}
+	}
+}
+
+void flipUVs(float* uvs, int quads, int vert)
+{
+	float x, y;
+	int q;
+	for(q = 0; q < quads; q++)
+	{
+		if(vert)
+		{
+			//Vert
+			x = uvs[q * 8 + 0];
+			y = uvs[q * 8 + 1];
+			uvs[q * 8 + 0] = uvs[q * 8 + 4];
+			uvs[q * 8 + 1] = uvs[q * 8 + 5];
+			uvs[q * 8 + 4] = x;
+			uvs[q * 8 + 5] = y;
+
+			x = uvs[q * 8 + 2];
+			y = uvs[q * 8 + 3];
+			uvs[q * 8 + 2] = uvs[q * 8 + 6];
+			uvs[q * 8 + 3] = uvs[q * 8 + 7];
+			uvs[q * 8 + 6] = x;
+			uvs[q * 8 + 7] = y;
+		}
+		else
+		{
+			//Horz
+			x = uvs[q * 8 + 0];
+			y = uvs[q * 8 + 1];
+			uvs[q * 8 + 0] = uvs[q * 8 + 2];
+			uvs[q * 8 + 1] = uvs[q * 8 + 3];
+			uvs[q * 8 + 2] = x;
+			uvs[q * 8 + 3] = y;
+
+			x = uvs[q * 8 + 4];
+			y = uvs[q * 8 + 5];
+			uvs[q * 8 + 4] = uvs[q * 8 + 6];
+			uvs[q * 8 + 5] = uvs[q * 8 + 7];
+			uvs[q * 8 + 6] = x;
+			uvs[q * 8 + 7] = y;
+		}
+	}
 }
 
 int main(int argc, char *argv[]) {
@@ -1259,7 +1376,7 @@ int main(int argc, char *argv[]) {
     //Initialize BPS library
     bps_initialize();
 
-    //Use utility code to initialize EGL for rendering with GL ES 1.1
+    //Use utility code to initialize EGL for rendering with GL ES 2.0
     if (EXIT_SUCCESS != bbutil_init_egl(screen_cxt)) {
         fprintf(stderr, "bbutil_init_egl failed\n");
         bbutil_terminate();
@@ -1298,11 +1415,16 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
-    // get camera running
+    //Open camera
     if (camera_open(CAMERA_UNIT_FRONT, CAMERA_MODE_RW, &handle)) return 0;
     unsigned int orientation = 0;
     camera_get_native_orientation(handle, &orientation);
-    //TODO rotate UVs
+
+    //Modify UVs based on camera
+    rotateUVs(cube_tex_coords, CUBE_TEX_COORDS_QUAD_COUNT, orientation);
+    //TODO: flip UVs depending on if rear or front camera is being used
+
+    // get camera running
     if (camera_set_videovf_property(handle,
                                     CAMERA_IMGPROP_CREATEWINDOW, 0,
                                     CAMERA_IMGPROP_FORMAT, CAMERA_FRAMETYPE_RGB8888,
