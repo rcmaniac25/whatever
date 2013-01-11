@@ -40,9 +40,15 @@
 /* TODO:
  * Change plain cube shader to use a spotlight (and add normals)
  * Cleanup code
- * Flip UVs depending on if rear or front camera is being used
  * Rotate camera when device rotates
  * Figure out why FPS is inconsistent (one moment it's 40-50 FPS, the next it's 20). It's not like the filter is being changed.
+ *
+ * Additional (GL):
+ * Switch to VBOs for normals and vertices (don't do VAOs as the shaders could change what vert att is used)
+ * Render to framebuffers to do MSAA (but don't try rendering the texture to the cube, that will just cause problems)
+ *
+ * Other:
+ * Flip UVs depending on if rear or front camera is being used (need the APIs to do so)
  */
 
 //Uncomment this when debugging is desired
@@ -678,7 +684,7 @@ int initialize() {
 			"void main()"
 			"{"
 			"    gl_Position = perspectiveMatrix * modelViewMatrix * vec4(vertexPosition, 1.0);"
-			"    uv = uvPosition;"
+   			"    uv = uvPosition;"
 			"}";
 
    	const char* fSource_cube =
@@ -696,7 +702,7 @@ int initialize() {
 			"    gl_FragColor = texture2D(tex, uv);"
 			"}";
 
-   	//From http://coding-experiments.blogspot.com/2010/06/edge-detection.html
+   	//Based off http://coding-experiments.blogspot.com/2010/06/edge-detection.html
    	const char* fSource_cube_edge =
 			"#ifdef GL_ES\r\n"
 			"    #ifdef GL_FRAGMENT_PRECISION_HIGH\r\n"
@@ -708,44 +714,43 @@ int initialize() {
 			"varying vec2 uv;"
 			"uniform sampler2D tex;"
    			"uniform vec2 imageSize;"
+   			"const float EDGE_DELTA_EMPHASIS = 2.3;"
    			"float threshold(in float thr1, in float thr2 , in float val) {"
 			"    if (val < thr1) {return 0.0;}"
 			"    if (val > thr2) {return 1.0;}"
 			"    return val;"
    			"}"
-   			"// averaged pixel intensity from 3 color channels\r\n"
-   			"float avg_intensity(in vec4 pix) {"
-   			"    return (pix.r + pix.g + pix.b)/3.;"
-   			"}"
-   			"vec4 get_pixel(in vec2 coords, in float dx, in float dy) {"
-   			"    return texture2D(tex,coords + vec2(dx, dy));"
+   			"float get_pixel(in vec2 coords, in float dx, in float dy) {"
+   			"    vec4 color = texture2D(tex, coords + vec2(dx, dy));"
+   			"    // averaged pixel intensity from 3 color channels\r\n"
+   			"    return (color.r + color.g + color.b) / 3.0;"
    			"}"
    			"// returns pixel color\r\n"
-   			"float IsEdge(in vec2 coords){"
-			"    float dxtex = 1.0 / imageSize.x /*image width*/;"
-			"    float dytex = 1.0 / imageSize.y /*image height*/;"
-			"    float pix[9];"
-			"    int k = -1;"
+   			"float IsEdge(in vec2 coords, in float dxtex, in float dytex) {"
+			"    float pix[8];"
 			"    float delta;"
-			"    // read neighboring pixel intensities\r\n"
-			"    for (int i=-1; i<2; i++) {"
-			"        for(int j=-1; j<2; j++) {"
-			"            k++;"
-			"            pix[k] = avg_intensity(get_pixel(coords,float(i)*dxtex,float(j)*dytex));"
-			"        }"
-			"    }"
+			"    // read neighboring pixel intensities (unwrapped loop to speed up)\r\n"
+   			"    pix[0] = get_pixel(coords,-dxtex,-dytex);"
+   			"    pix[1] = get_pixel(coords,-dxtex,0.0);"
+   			"    pix[2] = get_pixel(coords,-dxtex,dytex);"
+   			"    pix[3] = get_pixel(coords,0.0,-dytex);"
+			"    pix[4] = get_pixel(coords,0.0,dytex);"
+   			"    pix[5] = get_pixel(coords,dxtex,-dytex);"
+			"    pix[6] = get_pixel(coords,dxtex,0.0);"
+			"    pix[7] = get_pixel(coords,dxtex,dytex);"
 			"    // average color differences around neighboring pixels\r\n"
-			"    delta = (abs(pix[1]-pix[7])+"
-			"            abs(pix[5]-pix[3]) +"
-			"            abs(pix[0]-pix[8])+"
-			"            abs(pix[2]-pix[6])"
-			"            )/4.;"
-			"    return threshold(0.25,0.4,clamp(1.8*delta,0.0,1.0));"
+			"    delta = (abs(pix[1]-pix[6])+"
+			"            abs(pix[4]-pix[3]) +"
+			"            abs(pix[0]-pix[7])+"
+			"            abs(pix[2]-pix[5])"
+			"            )/4.0;"
+			"    return threshold(0.25,0.4,clamp(EDGE_DELTA_EMPHASIS*delta,0.0,1.0));"
    			"}"
-			"void main()"
-			"{"
+			"void main() {"
+			"    float dxtex = 1.0 / imageSize.x; //image width\r\n"
+			"    float dytex = 1.0 / imageSize.y; //image height\r\n"
    			"    vec4 color = vec4(0.0,0.0,0.0,1.0);"
-   			"    color.g = IsEdge(uv);"
+   			"    color.g = IsEdge(uv, dxtex, dytex);"
    			"    gl_FragColor = color;"
 			"}";
 

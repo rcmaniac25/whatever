@@ -13,6 +13,8 @@
 
 #include "matrix.h"
 
+//Nothing in here is optimized, so it would be easier to understand.
+
 matrix4f matrix_ortho(GLfloat left, GLfloat right, GLfloat bottom, GLfloat top, GLfloat near, GLfloat far)
 {
 	GLfloat* ret = calloc(4 * 4, sizeof(GLfloat));
@@ -317,6 +319,89 @@ void matrix_rotate_set(GLfloat angle, GLfloat x, GLfloat y, GLfloat z, matrix4f 
 		matrix[13] = 0.0f;
 		matrix[14] = 0.0f;
 		matrix[15] = 1.0f;
+	}
+}
+
+GLfloat matrix_determinant_internal(const GLfloat* matrix, int sideLen)
+{
+	GLfloat ret = 0.0f;
+	int i, j;
+	//Positive calculation
+	for(i = 0; i < sideLen; i++)
+	{
+		GLfloat mul = 1.0f;
+		for(j = 0; j < sideLen; j++)
+		{
+			mul *= matrix[((i + j) % sideLen) * sideLen + j];
+		}
+		ret += mul;
+	}
+	//Negative calculation
+	for(i = sideLen - 1; i >= 0; i--)
+	{
+		GLfloat mul = 1.0f;
+		for(j = 0; j < sideLen; j++)
+		{
+			//Make sure that we don't go outside the bounds of the array
+			int off = (i - j) % sideLen;
+			if(off < 0)
+			{
+				off += sideLen;
+			}
+			mul *= matrix[off * sideLen + j];
+		}
+		ret -= mul;
+	}
+	return ret;
+}
+
+GLfloat matrix_determinant(const matrix4f matrix)
+{
+	if(matrix)
+	{
+		return matrix_determinant_internal(matrix, 4);
+	}
+	return INFINITY;
+}
+
+matrix4f matrix_transpose(const matrix4f matrix)
+{
+	GLfloat* ret = calloc(4 * 4, sizeof(GLfloat));
+	matrix_transpose_set(matrix, ret);
+	return ret;
+}
+
+BOOL matrix_invert(const matrix4f matrix, matrix4f invert)
+{
+	if(matrix && invert && matrix != invert)
+	{
+		GLfloat det = matrix_determinant(matrix);
+		if(det >= 1e-6)
+		{
+			det = 1.0f / det;
+			//TODO
+		}
+	}
+	return FALSE;
+}
+
+void matrix_transpose_internal(const GLfloat* matrix, GLfloat* transpose, int sideLen)
+{
+	int i, j;
+	for(i = 0; i < sideLen; i++)
+	{
+		for(j = 0; j < sideLen; j++)
+		{
+			transpose[j * sideLen + i] = matrix[i * sideLen + j];
+		}
+	}
+}
+
+void matrix_transpose_set(const matrix4f matrix, matrix4f transpose)
+{
+	if(matrix && transpose && matrix != transpose)
+	{
+		matrix_transpose_internal(matrix, transpose, 4);
 	}
 }
 
