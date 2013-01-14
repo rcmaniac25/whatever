@@ -651,9 +651,12 @@ int initialize() {
     const char* vSource_menu =
    			"attribute vec2 vertexPosition;"
    			"attribute vec2 uvPosition;"
+
    			"uniform mat4 modelViewMatrix;"
    			"uniform mat4 perspectiveMatrix;"
+
    			"varying vec2 uv;"
+
    			"void main()"
    			"{"
    			"    gl_Position = perspectiveMatrix * modelViewMatrix * vec4(vertexPosition, 0.0, 1.0);"
@@ -668,23 +671,42 @@ int initialize() {
    			"        precision mediump float;\r\n"
    			"    #endif\r\n"
    			"#endif\r\n"
+
    			"varying vec2 uv;"
+
    			"uniform sampler2D tex;"
+
    			"void main()"
    			"{"
    			"    gl_FragColor = texture2D(tex, uv);"
    			"}";
 
+   	//xxx
    	const char* vSource_cube =
    			"attribute vec3 vertexPosition;"
+   			"attribute vec3 vertexNormal;"
 			"attribute vec2 uvPosition;"
+
 			"uniform mat4 modelViewMatrix;"
 			"uniform mat4 perspectiveMatrix;"
+   			"uniform vec4 lightPosition;"
+
+   			"varying vec3 pos;"
+   			"varying vec3 norm;"
 			"varying vec2 uv;"
+   			"varying vec3 lDir;"
+
 			"void main()"
 			"{"
 			"    gl_Position = perspectiveMatrix * modelViewMatrix * vec4(vertexPosition, 1.0);"
+
+			"    pos = vec3(modelViewMatrix * vec4(vertexPosition, 1.0));"
+			"    norm = normalize(vec3(modelViewMatrix * vec4(vertexNormal, 0.0)));"
    			"    uv = uvPosition;"
+
+   			"    vec3 lPos = vec3(modelViewMatrix * lightPosition);"
+   			"    if(lightPosition.w == 0.0){lDir = lPos;}"
+   			"    else{lDir = lPos - pos;}"
 			"}";
 
    	const char* fSource_cube =
@@ -695,11 +717,43 @@ int initialize() {
 			"        precision mediump float;\r\n"
 			"    #endif\r\n"
 			"#endif\r\n"
+
+   			"varying vec3 pos;"
+			"varying vec3 norm;"
 			"varying vec2 uv;"
+   			"varying vec3 lDir;"
+
+   			"uniform mat4 modelViewMatrix;"
 			"uniform sampler2D tex;"
+			"uniform vec4 lightAmbient;"
+			"uniform vec4 lightDiffuse;"
+			"uniform vec3 lightSpotDirection;"
+
+			"const vec4 ambient = vec4(0.2, 0.2, 0.2, 1.0);"
+			"const float spot_cutoff = radians(180.0);"
+			"const float spot_exponent = 0.0;"
+
 			"void main()"
 			"{"
-			"    gl_FragColor = texture2D(tex, uv);"
+			"    vec3 N = normalize(norm);"
+			"    vec3 E = normalize(pos);"
+			"    vec3 L = normalize(lDir);"
+
+			"    vec3 H = normalize(E + L);"
+
+			"    vec4 la = ambient * lightAmbient;"
+
+			"    float spotEffect = dot(normalize(vec3(modelViewMatrix * vec4(lightSpotDirection, 0.0))), -L);"
+
+			"    //gl_FragColor = vec4(normalize(lightSpotDirection), 1.0);\r\n"
+			"    if(spotEffect > cos(spot_cutoff)) {"
+			"        spotEffect = pow(spotEffect, spot_exponent);"
+			"        vec4 lf = (texture2D(tex, uv) * lightDiffuse) * max(dot(L, N), 0.0);"
+			"        gl_FragColor = la + lf;\r\n"
+			"    }"
+			"    else {"
+			"        gl_FragColor = la;\r\n"
+			"    }"
 			"}";
 
    	//Based off http://coding-experiments.blogspot.com/2010/06/edge-detection.html
@@ -711,24 +765,31 @@ int initialize() {
 			"        precision mediump float;\r\n"
 			"    #endif\r\n"
 			"#endif\r\n"
+
 			"varying vec2 uv;"
+
 			"uniform sampler2D tex;"
    			"uniform vec2 imageSize;"
+
    			"const float EDGE_DELTA_EMPHASIS = 2.3;"
+
    			"float threshold(in float thr1, in float thr2 , in float val) {"
 			"    if (val < thr1) {return 0.0;}"
 			"    if (val > thr2) {return 1.0;}"
 			"    return val;"
    			"}"
+
    			"float get_pixel(in vec2 coords, in float dx, in float dy) {"
    			"    vec4 color = texture2D(tex, coords + vec2(dx, dy));"
    			"    // averaged pixel intensity from 3 color channels\r\n"
    			"    return (color.r + color.g + color.b) / 3.0;"
    			"}"
+
    			"// returns pixel color\r\n"
    			"float IsEdge(in vec2 coords, in float dxtex, in float dytex) {"
 			"    float pix[8];"
 			"    float delta;"
+
 			"    // read neighboring pixel intensities (unwrapped loop to speed up)\r\n"
    			"    pix[0] = get_pixel(coords,-dxtex,-dytex);"
    			"    pix[1] = get_pixel(coords,-dxtex,0.0);"
@@ -738,17 +799,21 @@ int initialize() {
    			"    pix[5] = get_pixel(coords,dxtex,-dytex);"
 			"    pix[6] = get_pixel(coords,dxtex,0.0);"
 			"    pix[7] = get_pixel(coords,dxtex,dytex);"
+
 			"    // average color differences around neighboring pixels\r\n"
 			"    delta = (abs(pix[1]-pix[6])+"
 			"            abs(pix[4]-pix[3]) +"
 			"            abs(pix[0]-pix[7])+"
 			"            abs(pix[2]-pix[5])"
 			"            )/4.0;"
+
 			"    return threshold(0.25,0.4,clamp(EDGE_DELTA_EMPHASIS*delta,0.0,1.0));"
    			"}"
+
 			"void main() {"
 			"    float dxtex = 1.0 / imageSize.x; //image width\r\n"
 			"    float dytex = 1.0 / imageSize.y; //image height\r\n"
+
    			"    vec4 color = vec4(0.0,0.0,0.0,1.0);"
    			"    color.g = IsEdge(uv, dxtex, dytex);"
    			"    gl_FragColor = color;"
@@ -762,8 +827,11 @@ int initialize() {
 			"        precision mediump float;\r\n"
 			"    #endif\r\n"
 			"#endif\r\n"
+
 			"varying vec2 uv;"
+
 			"uniform sampler2D tex;"
+
 			"void main()"
 			"{"
    			"    vec4 color = texture2D(tex, uv);"
@@ -780,11 +848,15 @@ int initialize() {
 			"        precision mediump float;\r\n"
 			"    #endif\r\n"
 			"#endif\r\n"
+
 			"varying vec2 uv;"
+
 			"uniform sampler2D tex;"
+
    			"const vec2 center = vec2(0.5, 0.5);"
    			"const float radius = 0.5;"
    			"const float angle = 1.0;"
+
 			"void main()"
 			"{"
 			"    vec2 textureCoordinateToUse = uv;"
@@ -1012,22 +1084,22 @@ void render() {
 	GLint lightAtt = glGetUniformLocation(selectedCubeShader, "lightAmbient");
 	if(lightAtt >= 0)
 	{
-		glUniform4fv(lightAtt, 1, light_ambient); //XXX GL_AMBIENT
+		glUniform4fv(lightAtt, 1, light_ambient);
 	}
 	lightAtt = glGetUniformLocation(selectedCubeShader, "lightDiffuse");
 	if(lightAtt >= 0)
 	{
-		glUniform4fv(lightAtt, 1, light_diffuse); //XXX GL_DIFFUSE
+		glUniform4fv(lightAtt, 1, light_diffuse);
 	}
 	lightAtt = glGetUniformLocation(selectedCubeShader, "lightPosition");
 	if(lightAtt >= 0)
 	{
-		glUniform4fv(lightAtt, 1, light_pos); //XXX GL_POSITION
+		glUniform4fv(lightAtt, 1, light_pos);
 	}
 	lightAtt = glGetUniformLocation(selectedCubeShader, "lightSpotDirection");
 	if(lightAtt >= 0)
 	{
-		glUniform4fv(lightAtt, 1, light_direction); //XXX GL_SPOT_DIRECTION
+		glUniform4fv(lightAtt, 1, light_direction);
 	}
 
     // regenerate texture
@@ -1068,8 +1140,8 @@ void render() {
     glBindTexture(GL_TEXTURE_2D, textureID);
 
     int w = cameraBuf->framedesc.rgb8888.stride/4;
-    int h = cameraBuf->framedesc.rgb8888.height;
     if (!reuse) {
+    	int h = cameraBuf->framedesc.rgb8888.height;
 		static int textureInit = 0;
 		if(textureInit == 0) {
 			//Setup the texture
