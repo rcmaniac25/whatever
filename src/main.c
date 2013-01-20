@@ -335,22 +335,22 @@ int resize(bps_event_t *event) {
 
     if(matrix_menu_projection)
     {
-    	matrix_free(matrix_menu_projection);
+    	matrix_free_m4(matrix_menu_projection);
     	matrix_menu_projection = NULL;
     }
     if(matrix_menu_modelView)
 	{
-		matrix_free(matrix_menu_modelView);
+		matrix_free_m4(matrix_menu_modelView);
 		matrix_menu_modelView = NULL;
 	}
     if(matrix_cube_projection)
 	{
-		matrix_free(matrix_cube_projection);
+		matrix_free_m4(matrix_cube_projection);
 		matrix_cube_projection = NULL;
 	}
 	if(matrix_cube_modelView)
 	{
-		matrix_free(matrix_cube_modelView);
+		matrix_free_m4(matrix_cube_modelView);
 		matrix_cube_modelView = NULL;
 	}
 
@@ -689,24 +689,29 @@ int initialize() {
 
 			"uniform mat4 modelViewMatrix;"
 			"uniform mat4 perspectiveMatrix;"
+   			"uniform mat3 normalModelViewMatrix;"
    			"uniform vec4 lightPosition;"
+   			"uniform vec4 lightAmbient;"
 
    			"varying vec3 pos;"
    			"varying vec3 norm;"
 			"varying vec2 uv;"
-   			"varying vec3 lDir;"
+   			"varying vec3 lPos;"
+   			"varying vec4 lAmb;"
+
+   			"const vec4 ambient = vec4(0.2, 0.2, 0.2, 1.0);"
 
 			"void main()"
 			"{"
 			"    gl_Position = perspectiveMatrix * modelViewMatrix * vec4(vertexPosition, 1.0);"
 
 			"    pos = vec3(modelViewMatrix * vec4(vertexPosition, 1.0));"
-			"    norm = normalize(vec3(modelViewMatrix * vec4(vertexNormal, 0.0)));"
+			"    norm = normalize(normalModelViewMatrix * vertexNormal);"
    			"    uv = uvPosition;"
 
-   			"    vec3 lPos = vec3(modelViewMatrix * lightPosition);"
-   			"    if(lightPosition.w == 0.0){lDir = lPos;}"
-   			"    else{lDir = lPos - pos;}"
+   			"    lPos = vec3(modelViewMatrix * lightPosition);"
+
+   			"    lAmb = ambient * lightAmbient;"
 			"}";
 
    	const char* fSource_cube =
@@ -721,39 +726,41 @@ int initialize() {
    			"varying vec3 pos;"
 			"varying vec3 norm;"
 			"varying vec2 uv;"
-   			"varying vec3 lDir;"
+   			"varying vec3 lPos;"
+			"varying vec4 lAmb;"
 
    			"uniform mat4 modelViewMatrix;"
 			"uniform sampler2D tex;"
-			"uniform vec4 lightAmbient;"
+
 			"uniform vec4 lightDiffuse;"
 			"uniform vec3 lightSpotDirection;"
 
-			"const vec4 ambient = vec4(0.2, 0.2, 0.2, 1.0);"
-			"const float spot_cutoff = radians(180.0);"
+			"const float spot_cutoff = cos(radians(180.0));"
 			"const float spot_exponent = 0.0;"
 
 			"void main()"
 			"{"
-			"    vec3 N = normalize(norm);"
-			"    vec3 E = normalize(pos);"
-			"    vec3 L = normalize(lDir);"
+   			"    vec4 color = lAmb;"
 
-			"    vec3 H = normalize(E + L);"
+			"    vec3 n = normalize(norm);"
 
-			"    vec4 la = ambient * lightAmbient;"
+   			"    vec3 lightDir = lPos - pos;"
 
-			"    float spotEffect = dot(normalize(vec3(modelViewMatrix * vec4(lightSpotDirection, 0.0))), -L);"
+   			"    float dist = length(lightDir);"
 
-			"    //gl_FragColor = vec4(normalize(lightSpotDirection), 1.0);\r\n"
-			"    if(spotEffect > cos(spot_cutoff)) {"
-			"        spotEffect = pow(spotEffect, spot_exponent);"
-			"        vec4 lf = (texture2D(tex, uv) * lightDiffuse) * max(dot(L, N), 0.0);"
-			"        gl_FragColor = la + lf;\r\n"
-			"    }"
-			"    else {"
-			"        gl_FragColor = la;\r\n"
-			"    }"
+   			"    float NdotL = dot(n,normalize(lightDir));"
+   			"    if (NdotL > 0.0)"
+   			"    {"
+   			"        /*vec3 mvSpotDir = vec3(modelViewMatrix * vec4(lightSpotDirection, 0.0));"
+   			"        float spotEffect = dot(normalize(mvSpotDir), normalize(-lightDir));"
+   			"        if (spotEffect > spot_cutoff)"
+   			"        {"
+   			"            spotEffect = pow(spotEffect, spot_exponent);*/"
+   			"            color += texture2D(tex, uv) * lightDiffuse * NdotL;"
+   			"        /*}*/"
+   			"    }"
+
+   			"    gl_FragColor = vec4(norm, 1.0);"
 			"}";
 
    	//Based off http://coding-experiments.blogspot.com/2010/06/edge-detection.html
@@ -1039,7 +1046,7 @@ void render() {
             glUniformMatrix4fv(mvAtt, 1, GL_FALSE, menuMat);
         }
 
-        matrix_get_translation(menuMat, &x, &y, NULL);
+        matrix_get_translation_m4(menuMat, &x, &y, NULL);
         x *= width;
         y *= height;
 
@@ -1049,7 +1056,7 @@ void render() {
         bbutil_render_text(font, "Greyscale",	70.0f + x, -160.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
         bbutil_render_text(font, "Swirl",		70.0f + x, -220.0f + y,	0.35f, 0.35f, 0.35f, 1.0f);
 
-        matrix_free(menuMat);
+        matrix_free_m4(menuMat);
     }
 
     glDisableVertexAttribArray(uvAtt);
@@ -1069,10 +1076,21 @@ void render() {
 		matrix_cube_modelView = matrix_multiply_delete(matrix_cube_modelView, TRUE, matrix_rotate(15.0f, 0.0f, 0.0f, 1.0f), TRUE);
 	}
 
-	matrix4f mvCube = matrix_multiply_delete(matrix_cube_modelView, FALSE, matrix_rotate(angle, 0.0f, 1.0f, 0.0f), TRUE);
-
 	GLuint selectedCubeShader = programs_cube[selected];
 	glUseProgram(selectedCubeShader);
+
+	GLuint nmvAtt = glGetUniformLocation(selectedCubeShader, "normalModelViewMatrix");
+
+	matrix4f mvCube = matrix_multiply_delete(matrix_cube_modelView, FALSE, matrix_rotate(angle, 0.0f, 1.0f, 0.0f), TRUE);
+	matrix3f nmvCube = matrix_identity_m3();
+	if(nmvAtt > 0)
+	{
+		//Time consuming, do only if we need to (note: matrix_identity_m3 is a cheap operation except for allocating memory)
+		if(matrix_invert_m4_to_m3(mvCube, nmvCube))
+		{
+			glUniformMatrix3fv(mvAtt, 1, GL_TRUE, nmvCube);
+		}
+	}
 
 	pAtt = glGetUniformLocation(selectedCubeShader, "perspectiveMatrix");
 	glUniformMatrix4fv(pAtt, 1, GL_FALSE, matrix_cube_projection);
@@ -1214,7 +1232,8 @@ void render() {
 
 	glBindTexture(GL_TEXTURE_2D, 0);
 
-    matrix_free(mvCube);
+    matrix_free_m4(mvCube);
+    matrix_free_m3(nmvCube);
 
     glUseProgram(0);
 

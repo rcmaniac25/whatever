@@ -12,6 +12,7 @@
 #include <math.h>
 
 #include "matrix.h"
+#include "vvector.h"
 
 //Nothing in here is optimized, so it would be easier to understand.
 
@@ -95,14 +96,21 @@ BOOL matrix_frustum_set(GLfloat left, GLfloat right, GLfloat bottom, GLfloat top
 	return TRUE;
 }
 
-matrix4f matrix_identiy()
+matrix4f matrix_identity_m4()
 {
 	GLfloat* ret = calloc(4 * 4, sizeof(GLfloat));
-	matrix_identiy_set(ret);
+	matrix_identity_m4_set(ret);
 	return ret;
 }
 
-void matrix_identiy_set(matrix4f matrix)
+matrix3f matrix_identity_m3()
+{
+	GLfloat* ret = calloc(3 * 3, sizeof(GLfloat));
+	matrix_identity_m3_set(ret);
+	return ret;
+}
+
+void matrix_identity_m4_set(matrix4f matrix)
 {
 	if(matrix)
 	{
@@ -115,10 +123,22 @@ void matrix_identiy_set(matrix4f matrix)
 	}
 }
 
-matrix4f matrix_create(	GLfloat m11, GLfloat m21, GLfloat m31, GLfloat m41,
-						GLfloat m12, GLfloat m22, GLfloat m32, GLfloat m42,
-						GLfloat m13, GLfloat m23, GLfloat m33, GLfloat m43,
-						GLfloat m14, GLfloat m24, GLfloat m34, GLfloat m44)
+void matrix_identity_m3_set(matrix3f matrix)
+{
+	if(matrix)
+	{
+		memset(matrix, 0, sizeof(GLfloat) * 3 * 3);
+
+		matrix[0] = 1.0f;
+		matrix[5] = 1.0f;
+		matrix[10] = 1.0f;
+	}
+}
+
+matrix4f matrix_create_m4(	GLfloat m11, GLfloat m21, GLfloat m31, GLfloat m41,
+							GLfloat m12, GLfloat m22, GLfloat m32, GLfloat m42,
+							GLfloat m13, GLfloat m23, GLfloat m33, GLfloat m43,
+							GLfloat m14, GLfloat m24, GLfloat m34, GLfloat m44)
 {
 	GLfloat* ret = calloc(4 * 4, sizeof(GLfloat));
 	if(ret)
@@ -146,12 +166,17 @@ matrix4f matrix_create(	GLfloat m11, GLfloat m21, GLfloat m31, GLfloat m41,
 	return ret;
 }
 
-void matrix_free(const matrix4f matrix)
+void matrix_free_m4(const matrix4f matrix)
 {
 	free(matrix);
 }
 
-void matrix_printout(const matrix4f matrix)
+void matrix_free_m3(const matrix3f matrix)
+{
+	free(matrix);
+}
+
+void matrix_printout_m4(const matrix4f matrix)
 {
 	if(matrix)
 	{
@@ -163,7 +188,18 @@ void matrix_printout(const matrix4f matrix)
 	}
 }
 
-void matrix_get_translation(const matrix4f matrix, GLfloat* x, GLfloat* y, GLfloat* z)
+void matrix_printout_m3(const matrix3f matrix)
+{
+	if(matrix)
+	{
+		fprintf(stderr, "%f, %f, %f\n", matrix[0], matrix[3], matrix[6]);
+		fprintf(stderr, "%f, %f, %f\n", matrix[1], matrix[4], matrix[7]);
+		fprintf(stderr, "%f, %f, %f\n", matrix[2], matrix[5], matrix[8]);
+		fprintf(stderr, "\n");
+	}
+}
+
+void matrix_get_translation_m4(const matrix4f matrix, GLfloat* x, GLfloat* y, GLfloat* z)
 {
 	if(matrix)
 	{
@@ -178,6 +214,21 @@ void matrix_get_translation(const matrix4f matrix, GLfloat* x, GLfloat* y, GLflo
 		if(z)
 		{
 			*z = matrix[14];
+		}
+	}
+}
+
+void matrix_get_translation_m3(const matrix3f matrix, GLfloat* x, GLfloat* y)
+{
+	if(matrix)
+	{
+		if(x)
+		{
+			*x = matrix[6];
+		}
+		if(y)
+		{
+			*y = matrix[7];
 		}
 	}
 }
@@ -322,64 +373,156 @@ void matrix_rotate_set(GLfloat angle, GLfloat x, GLfloat y, GLfloat z, matrix4f 
 	}
 }
 
-GLfloat matrix_determinant_internal(const GLfloat* matrix, int sideLen)
-{
-	GLfloat ret = 0.0f;
-	int i, j;
-	//Positive calculation
-	for(i = 0; i < sideLen; i++)
-	{
-		GLfloat mul = 1.0f;
-		for(j = 0; j < sideLen; j++)
-		{
-			mul *= matrix[((i + j) % sideLen) * sideLen + j];
-		}
-		ret += mul;
-	}
-	//Negative calculation
-	for(i = sideLen - 1; i >= 0; i--)
-	{
-		GLfloat mul = 1.0f;
-		for(j = 0; j < sideLen; j++)
-		{
-			//Make sure that we don't go outside the bounds of the array
-			int off = (i - j) % sideLen;
-			if(off < 0)
-			{
-				off += sideLen;
-			}
-			mul *= matrix[off * sideLen + j];
-		}
-		ret -= mul;
-	}
-	return ret;
-}
+#define MATRIX4F_TO_MAT4X4(mat,m44) \
+	m44[0][0] = mat[0 * 4 + 0]; \
+	m44[0][1] = mat[0 * 4 + 1]; \
+	m44[0][2] = mat[0 * 4 + 2]; \
+	m44[0][3] = mat[0 * 4 + 3]; \
+	m44[1][0] = mat[1 * 4 + 0]; \
+	m44[1][1] = mat[1 * 4 + 1]; \
+	m44[1][2] = mat[1 * 4 + 2]; \
+	m44[1][3] = mat[1 * 4 + 3]; \
+	m44[2][0] = mat[2 * 4 + 0]; \
+	m44[2][1] = mat[2 * 4 + 1]; \
+	m44[2][2] = mat[2 * 4 + 2]; \
+	m44[2][3] = mat[2 * 4 + 3]; \
+	m44[3][0] = mat[3 * 4 + 0]; \
+	m44[3][1] = mat[3 * 4 + 1]; \
+	m44[3][2] = mat[3 * 4 + 2]; \
+	m44[3][3] = mat[3 * 4 + 3];
+
+#define MATRIX3F_TO_MAT3X3(mat,m33) \
+	m33[0][0] = mat[0 * 3 + 0]; \
+	m33[0][1] = mat[0 * 3 + 1]; \
+	m33[0][2] = mat[0 * 3 + 2]; \
+	m33[1][0] = mat[1 * 3 + 0]; \
+	m33[1][1] = mat[1 * 3 + 1]; \
+	m33[1][2] = mat[1 * 3 + 2]; \
+	m33[2][0] = mat[2 * 3 + 0]; \
+	m33[2][1] = mat[2 * 3 + 1]; \
+	m33[2][2] = mat[2 * 3 + 2];
+
+#define MAT4X4_TO_MATRIX4F(m44,mat) \
+	mat[0 * 4 + 0] = m44[0][0]; \
+	mat[0 * 4 + 1] = m44[0][1]; \
+	mat[0 * 4 + 2] = m44[0][2]; \
+	mat[0 * 4 + 3] = m44[0][3]; \
+	mat[1 * 4 + 0] = m44[1][0]; \
+	mat[1 * 4 + 1] = m44[1][1]; \
+	mat[1 * 4 + 2] = m44[1][2]; \
+	mat[1 * 4 + 3] = m44[1][3]; \
+	mat[2 * 4 + 0] = m44[2][0]; \
+	mat[2 * 4 + 1] = m44[2][1]; \
+	mat[2 * 4 + 2] = m44[2][2]; \
+	mat[2 * 4 + 3] = m44[2][3]; \
+	mat[3 * 4 + 0] = m44[3][0]; \
+	mat[3 * 4 + 1] = m44[3][1]; \
+	mat[3 * 4 + 2] = m44[3][2]; \
+	mat[3 * 4 + 3] = m44[3][3];
+
+#define MAT3X3_TO_MATRIX3F(m33,mat) \
+	mat[0 * 3 + 0] = m33[0][0]; \
+	mat[0 * 3 + 1] = m33[0][1]; \
+	mat[0 * 3 + 2] = m33[0][2]; \
+	mat[1 * 3 + 0] = m33[1][0]; \
+	mat[1 * 3 + 1] = m33[1][1]; \
+	mat[1 * 3 + 2] = m33[1][2]; \
+	mat[2 * 3 + 0] = m33[2][0]; \
+	mat[2 * 3 + 1] = m33[2][1]; \
+	mat[2 * 3 + 2] = m33[2][2];
+
+#define MAT4X4_TO_MATRIX3F(m44,mat) \
+	mat[0 * 3 + 0] = m44[0][0]; \
+	mat[0 * 3 + 1] = m44[0][1]; \
+	mat[0 * 3 + 2] = m44[0][2]; \
+	mat[1 * 3 + 0] = m44[1][0]; \
+	mat[1 * 3 + 1] = m44[1][1]; \
+	mat[1 * 3 + 2] = m44[1][2]; \
+	mat[2 * 3 + 0] = m44[2][0]; \
+	mat[2 * 3 + 1] = m44[2][1]; \
+	mat[2 * 3 + 2] = m44[2][2];
 
 GLfloat matrix_determinant(const matrix4f matrix)
 {
 	if(matrix)
 	{
-		return matrix_determinant_internal(matrix, 4);
+		GLfloat mat[4][4];
+		GLfloat d = 0.0;
+
+		MATRIX4F_TO_MAT4X4(matrix,mat)
+		DETERMINANT_4X4(d,mat)
+
+		return d;
 	}
 	return INFINITY;
 }
 
-matrix4f matrix_transpose(const matrix4f matrix)
+matrix4f matrix_transpose_m4(const matrix4f matrix)
 {
 	GLfloat* ret = calloc(4 * 4, sizeof(GLfloat));
-	matrix_transpose_set(matrix, ret);
+	matrix_transpose_m4_set(matrix, ret);
 	return ret;
 }
 
-BOOL matrix_invert(const matrix4f matrix, matrix4f invert)
+matrix3f matrix_transpose_m3(const matrix3f matrix)
+{
+	GLfloat* ret = calloc(3 * 3, sizeof(GLfloat));
+	matrix_transpose_m3_set(matrix, ret);
+	return ret;
+}
+
+BOOL matrix_invert_m4(const matrix4f matrix, matrix4f invert)
 {
 	if(matrix && invert && matrix != invert)
 	{
-		GLfloat det = matrix_determinant(matrix);
-		if(det >= 1e-6)
+		GLfloat in[4][4];
+		GLfloat out[4][4];
+		GLfloat d = 0.0;
+
+		MATRIX4F_TO_MAT4X4(matrix,in);
+		INVERT_4X4(out,d,in);
+		if(d >= 1e-6)
 		{
-			det = 1.0f / det;
-			//TODO
+			MAT4X4_TO_MATRIX4F(out,invert);
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+BOOL matrix_invert_m3(const matrix3f matrix, matrix3f invert)
+{
+	if(matrix && invert && matrix != invert)
+	{
+		GLfloat in[3][3];
+		GLfloat out[3][3];
+		GLfloat d = 0.0;
+
+		MATRIX3F_TO_MAT3X3(matrix,in);
+		INVERT_3X3(out,d,in);
+		if(d >= 1e-6)
+		{
+			MAT3X3_TO_MATRIX3F(out,invert);
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+BOOL matrix_invert_m4_to_m3(const matrix4f matrix, matrix3f invert)
+{
+	if(matrix && invert && matrix != invert)
+	{
+		GLfloat in[4][4];
+		GLfloat out[4][4];
+		GLfloat d = 0.0;
+
+		MATRIX4F_TO_MAT4X4(matrix,in);
+		INVERT_4X4(out,d,in);
+		if(d >= 1e-6)
+		{
+			MAT4X4_TO_MATRIX3F(out,invert);
+			return TRUE;
 		}
 	}
 	return FALSE;
@@ -397,11 +540,19 @@ void matrix_transpose_internal(const GLfloat* matrix, GLfloat* transpose, int si
 	}
 }
 
-void matrix_transpose_set(const matrix4f matrix, matrix4f transpose)
+void matrix_transpose_m4_set(const matrix4f matrix, matrix4f transpose)
 {
 	if(matrix && transpose && matrix != transpose)
 	{
 		matrix_transpose_internal(matrix, transpose, 4);
+	}
+}
+
+void matrix_transpose_m3_set(const matrix3f matrix, matrix3f transpose)
+{
+	if(matrix && transpose && matrix != transpose)
+	{
+		matrix_transpose_internal(matrix, transpose, 3);
 	}
 }
 
@@ -437,11 +588,11 @@ matrix4f matrix_multiply_delete(const matrix4f m1, BOOL freeM1, const matrix4f m
 
 		if(freeM1)
 		{
-			matrix_free(m1);
+			matrix_free_m4(m1);
 		}
 		if(freeM2)
 		{
-			matrix_free(m2);
+			matrix_free_m4(m2);
 		}
 	}
 	return ret;
